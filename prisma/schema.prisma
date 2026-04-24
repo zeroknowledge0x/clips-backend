@@ -94,15 +94,19 @@ model UserPlatform {
 }
 
 model Wallet {
-  id          Int      @id @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   userId      Int
   address     String
-  chain       String   @default("solana")
+  chain       String    @default("solana")
   type        String
-  connectedAt DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectedAt DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  /// Soft-delete timestamp — non-null means the wallet has been disconnected
+  deletedAt   DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   payouts     Payout[]
+
+  @@index([userId])
 }
 
 model Payout {
