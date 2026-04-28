@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import * as bodyParser from 'body-parser';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -28,6 +29,10 @@ async function bootstrap() {
 
   // Parse cookies (required for httpOnly cookie-based JWT support)
   app.use(cookieParser());
+
+  // Raw body parser for webhook signature verification (must be before JSON parser for specific routes)
+  // This preserves the raw body for HMAC signature verification
+  app.use('/webhooks/stellar', bodyParser.raw({ type: 'application/json' }));
 
   // Security headers with Helmet
   app.use(
