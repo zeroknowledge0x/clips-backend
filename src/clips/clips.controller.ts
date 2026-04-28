@@ -6,47 +6,52 @@ import {
   Param,
   Query,
   NotFoundException,
+  BadRequestException,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { ClipsService } from './clips.service.js';
 import type { ClipSortField, SortOrder } from './clips.service.js';
-import type { ClipGenerationJob } from './clip-generation.processor.js';
+import { CreateClipDto } from './dto/create-clip.dto.js';
 import type { BulkUpdateClipsDto } from './dto/bulk-update-clips.dto.js';
 import { LoginGuard } from '../auth/guards/login.guard.js';
 import { BulkDeleteClipsDto } from './dto/bulk-delete-clips.dto.js';
+import { PublishClipDto } from './dto/publish-clip.dto.js';
+import { ClipPublishService } from './clip-publish.service.js';
 
 @UseGuards(LoginGuard)
 @Controller('clips')
 export class ClipsController {
-  constructor(private readonly clipsService: ClipsService) {}
+  constructor(
+    private readonly clipsService: ClipsService,
+    private readonly clipPublishService: ClipPublishService,
+  ) {}
 
   /**
    * POST /clips/generate
-   * Enqueue a clip-generation job with automatic retry + exponential backoff.
-   * Returns the BullMQ job ID immediately; processing happens asynchronously.
-   *
-   * Body: { videoId, inputPath, outputPath, startTime, endTime, positionRatio, transcript? }
+   * Enqueue a clip-generation job. Limited to 10 req/min per authenticated user.
+   * Validates: startTime >= 0, endTime > startTime, duration 5–300 seconds.
    */
   @Post('generate')
-  generate(@Body() dto: ClipGenerationJob) {
+  @Throttle({ clipGenerate: { limit: 10, ttl: 60000 } })
+  generate(@Body() dto: CreateClipDto) {
+    const duration = dto.endTime - dto.startTime;
+    if (dto.endTime <= dto.startTime) {
+      throw new BadRequestException('endTime must be greater than startTime');
+    }
+    if (duration < 5 || duration > 300) {
+      throw new BadRequestException(
+        'Clip duration must be between 5 and 300 seconds',
+      );
+    }
     return this.clipsService.enqueueClip(dto);
   }
 
   /**
    * GET /clips
    * List clips, sorted by viralityScore descending by default.
-   *
-   * Query params:
-   *   videoId  — filter to a specific source video
-   *   sort     — field:order (e.g., viralityScore:desc, createdAt:asc)
-   *   sortBy   — legacy support for viralityScore | createdAt | duration
-   *   order    — legacy support for asc | desc
-   *
-   * Examples:
-   *   GET /clips?sort=viralityScore:desc
-   *   GET /clips?videoId=abc123&sort=duration:asc
    */
   @Get()
   list(
@@ -80,26 +85,32 @@ export class ClipsController {
   }
 
   /**
+   * POST /clips/:id/publish
+   * Publish a clip to one or more social platforms via Ayrshare.
+   * Body: { targetPlatforms: string[] }
+   */
+  @Post(':id/publish')
+  async publish(
+    @Param('id') id: string,
+    @Body() dto: PublishClipDto,
+    @Req() req: Request,
+  ) {
+    const userId = Number((req as any).user?.id ?? 0);
+    return this.clipPublishService.publish(Number(id), userId, dto.targetPlatforms);
+  }
+
+  /**
+   * GET /clips/:id/posts
+   * Returns per-platform post status for a clip.
+   */
+  @Get(':id/posts')
+  getPostStatus(@Param('id') id: string) {
+    return this.clipPublishService.getPostStatus(Number(id));
+  }
+
+  /**
    * POST /clips/bulk-update
    * Bulk update selected and/or postStatus for multiple clips in one transaction.
-   *
-   * Body:
-   *   {
-   *     clipIds:    string[]              — IDs to update (must belong to the requesting user)
-   *     selected?:  boolean               — mark clips as curated/selected
-   *     postStatus?: string | object      — e.g. 'posted', 'failed', or { platform, postId, ... }
-   *   }
-   *
-   * Response:
-   *   {
-   *     updatedCount:      number   — how many clips were actually updated
-   *     updates:           object   — the patch that was applied
-   *     notFoundIds:       string[] — IDs that were missing or belonged to another user
-   *     allClipsProcessed: boolean  — true when every clip in the affected video(s) is 'posted'
-   *   }
-   *
-   * Note: userId is read from req.user.id (populated by your auth guard).
-   * Until auth is wired up, falls back to the 'x-user-id' header for local testing.
    */
   @Post('bulk-update')
   bulkUpdate(@Body() dto: BulkUpdateClipsDto, @Req() req: Request) {
