@@ -10,6 +10,7 @@ import {
   Body,
   Post,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WalletsService, DisconnectResult } from './wallets.service';
 import { ConnectWalletDto } from './dto/connect-wallet.dto';
@@ -19,19 +20,23 @@ interface AuthRequest extends Request {
   user: { userId: number; email: string | null };
 }
 
+@ApiTags('wallets')
+@ApiBearerAuth('access-token')
 @Controller('wallets')
 @UseGuards(JwtAuthGuard)
 export class WalletsController {
   constructor(private readonly walletsService: WalletsService) {}
 
-  /**
-   * DELETE /wallets/:id
-   *
-   * Soft-deletes the wallet (sets deletedAt).
-   * Blocked if pending payouts exist on the wallet.
-   * Returns 404 for wallets that don't exist or belong to another user.
-   */
   @Delete(':id')
+  @ApiOperation({
+    summary: 'Disconnect wallet',
+    description: 'Soft-deletes the wallet (sets deletedAt). Blocked if pending payouts exist on the wallet.',
+  })
+  @ApiParam({ name: 'id', description: 'Wallet ID', type: 'number' })
+  @ApiResponse({ status: 200, description: 'Wallet disconnected successfully' })
+  @ApiResponse({ status: 400, description: 'Cannot disconnect - pending payouts exist' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'Wallet not found or belongs to another user' })
   @UseGuards(WalletOwnershipGuard)
   @HttpCode(HttpStatus.OK)
   async disconnect(
@@ -41,12 +46,14 @@ export class WalletsController {
     return this.walletsService.disconnect(id, req.user.userId);
   }
 
-  /**
-   * POST /wallets/connect
-   *
-   * Connect or update a wallet for the authenticated user.
-   */
   @Post('connect')
+  @ApiOperation({
+    summary: 'Connect wallet',
+    description: 'Connect or update a wallet for the authenticated user. Supports Stellar wallets via Freighter, Lobstr, or Albedo.',
+  })
+  @ApiResponse({ status: 200, description: 'Wallet connected successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid wallet data' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   @HttpCode(HttpStatus.OK)
   async connect(@Req() req: AuthRequest, @Body() dto: ConnectWalletDto) {
     return this.walletsService.connect(req.user.userId, dto);

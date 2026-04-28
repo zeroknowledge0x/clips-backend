@@ -61,6 +61,54 @@ npm run start:dev
 
 Open <http://localhost:3000> in your browser.
 
+## API Documentation (Swagger/OpenAPI)
+
+ClipCash provides comprehensive API documentation via Swagger UI.
+
+### Accessing the Docs
+
+When running in **development mode** (`NODE_ENV !== 'production'`):
+
+- **Swagger UI**: <http://localhost:3000/api/docs>
+- **OpenAPI JSON**: <http://localhost:3000/api/docs-json> (or `openapi.json` file)
+
+### Authentication
+
+Most endpoints require a Bearer token. To authenticate in Swagger UI:
+
+1. Click the **Authorize** button (🔓) at the top of the page
+2. Enter your JWT token: `Bearer your_token_here`
+3. Click **Authorize** and close the dialog
+4. All subsequent requests will include the token automatically
+
+### Exporting OpenAPI Spec
+
+To export the OpenAPI JSON spec for external use:
+
+```bash
+# During development (automatically exported on start)
+npm run start:dev
+
+# Or manually export
+npm run openapi:export
+```
+
+This creates `openapi.json` in the project root, which can be used with:
+- Postman (Import → File)
+- Insomnia
+- Code generators (OpenAPI Generator)
+- Frontend client SDKs
+
+### Environment Variables for Swagger
+
+```env
+# Disable Swagger UI in production (default: true in prod)
+ENABLE_SWAGGER_UI=false
+
+# Or enable it even in production (not recommended for public APIs)
+ENABLE_SWAGGER_UI=true
+```
+
 ## Environment Variables
 
 Copy `.env.example` to `.env` and fill in the values. Key variables:

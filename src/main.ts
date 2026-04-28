@@ -1,23 +1,69 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import * as bodyParser from 'body-parser';
+import * as fs from 'fs';
+import * as path from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const logger = new Logger('Bootstrap');
+  const isProduction = process.env.NODE_ENV === 'production';
 
-  // Swagger setup
-  const config = new DocumentBuilder()
+  // Swagger setup - only available in non-production environments
+  const swaggerConfig = new DocumentBuilder()
     .setTitle('ClipCash API')
     .setDescription('ClipCash backend API documentation')
     .setVersion('1.0')
-    .addBearerAuth()
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'Enter JWT token',
+      },
+      'access-token',
+    )
+    .addTag('auth', 'Authentication and authorization')
+    .addTag('users', 'User management')
+    .addTag('videos', 'Video upload and management')
+    .addTag('clips', 'Clip generation and management')
+    .addTag('subscriptions', 'Subscription and payment management')
+    .addTag('webhooks', 'Webhook endpoints for external services')
+    .addTag('wallets', 'Blockchain wallet management')
+    .addTag('payouts', 'Revenue payouts')
+    .addTag('earnings', 'Earnings tracking')
+    .addTag('nfts', 'NFT minting and royalty queries')
+    .addTag('jobs', 'Background job management')
+    .addTag('platforms', 'Social platform integrations')
     .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+
+  // Export OpenAPI spec to file for external use
+  const openapiPath = path.join(process.cwd(), 'openapi.json');
+  fs.writeFileSync(openapiPath, JSON.stringify(document, null, 2));
+  logger.log(`OpenAPI spec exported to ${openapiPath}`);
+
+  // Setup Swagger UI (only in non-production or if explicitly enabled)
+  const enableSwaggerUI = !isProduction || process.env.ENABLE_SWAGGER_UI === 'true';
+  if (enableSwaggerUI) {
+    SwaggerModule.setup('api/docs', app, document, {
+      swaggerOptions: {
+        persistAuthorization: true,
+        docExpansion: 'list',
+        filter: true,
+        showRequestDuration: true,
+      },
+      customSiteTitle: 'ClipCash API Documentation',
+    });
+    logger.log(`Swagger UI available at /api/docs`);
+  } else {
+    logger.log('Swagger UI disabled in production. Set ENABLE_SWAGGER_UI=true to enable.');
+  }
 
   const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
     'http://localhost:3000',
