@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "openapi:export": "ts-node -r tsconfig-paths/register scripts/export-openapi.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -101,6 +102,9 @@
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "moduleNameMapper": {
+      "^@prisma/client$": "<rootDir>/__mocks__/@prisma/client.ts"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"

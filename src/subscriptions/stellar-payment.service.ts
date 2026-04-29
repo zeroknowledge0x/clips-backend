@@ -1,19 +1,29 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import Server, { TransactionBuilder, Networks, Operation, Asset } from '@stellar/stellar-sdk';
+import { Horizon, TransactionBuilder, Networks, Operation, Asset } from '@stellar/stellar-sdk';
 import { CreateStellarSubscriptionDto, StellarPaymentIntentDto } from './dto/create-stellar-subscription.dto';
+import { CircuitBreakerService, CircuitBreakerConfig } from '../common/circuit-breaker/circuit-breaker.service';
 
 @Injectable()
 export class StellarPaymentService {
   private server: any;
+  private readonly logger = new Logger(StellarPaymentService.name);
   private readonly PAYMENT_EXPIRY_MINUTES = 15;
+
+  private readonly horizonCircuitBreakerConfig: CircuitBreakerConfig = {
+    name: 'stellar-payment-horizon',
+    failureThreshold: 5,
+    recoveryTimeout: 30000,
+    samplingDuration: 60000,
+  };
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly circuitBreakerService: CircuitBreakerService,
   ) {
-    this.server = new Server(
+    this.server = new Horizon.Server(
       this.configService.get<string>('STELLAR_HORIZON_URL') || 'https://horizon-testnet.stellar.org',
     );
   }
@@ -67,9 +77,12 @@ export class StellarPaymentService {
    */
   async verifyPayment(paymentIntentId: string, transactionHash: string): Promise<boolean> {
     try {
-      // Get the transaction from Stellar network
-      const transaction = await this.server.transactionsTransaction(transactionHash);
-      
+      // Get the transaction from Stellar network with circuit breaker
+      const transaction = await this.circuitBreakerService.execute(
+        this.horizonCircuitBreakerConfig,
+        async () => this.server.transactionsTransaction(transactionHash),
+      );
+
       // Get the payment intent
       const paymentIntent = await this.prisma.stellarPaymentIntent.findUnique({
         where: { id: paymentIntentId },
@@ -81,13 +94,13 @@ export class StellarPaymentService {
 
       // Verify transaction details match our payment intent
       const payment = transaction.operations.find(op => op.type === 'payment') as Operation.Payment;
-      
+
       if (!payment) {
         return false;
       }
 
       // Verify payment matches our intent
-      const isValidPayment = 
+      const isValidPayment =
         payment.destination === paymentIntent.destination &&
         payment.asset.getCode() === paymentIntent.asset &&
         parseFloat(payment.amount) === paymentIntent.amount &&
@@ -111,7 +124,11 @@ export class StellarPaymentService {
 
       return true;
     } catch (error) {
-      console.error('Error verifying Stellar payment:', error);
+      if (error.name === 'ServiceUnavailableException') {
+        this.logger.error(`Stellar service unavailable during payment verification: ${error.message}`);
+        throw error;
+      }
+      this.logger.error(`Error verifying Stellar payment: ${error.message}`);
       return false;
     }
   }

@@ -16,6 +16,7 @@ describe('PayoutsService', () => {
     payout: {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       aggregate: jest.fn(),

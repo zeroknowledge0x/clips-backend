@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StrKey, Horizon } from '@stellar/stellar-sdk';
+import { CircuitBreakerService, CircuitBreakerConfig } from '../common/circuit-breaker/circuit-breaker.service';
 
 export type StellarNetwork = 'testnet' | 'public';
 
@@ -12,7 +13,21 @@ export class StellarService {
   readonly horizonUrl: string;
   readonly networkPassphrase: string;
 
-  constructor() {
+  private readonly horizonCircuitBreakerConfig: CircuitBreakerConfig = {
+    name: 'stellar-horizon',
+    failureThreshold: 5,
+    recoveryTimeout: 30000,
+    samplingDuration: 60000,
+  };
+
+  private readonly rpcCircuitBreakerConfig: CircuitBreakerConfig = {
+    name: 'stellar-rpc',
+    failureThreshold: 5,
+    recoveryTimeout: 30000,
+    samplingDuration: 60000,
+  };
+
+  constructor(private readonly circuitBreakerService: CircuitBreakerService) {
     const raw = (process.env.STELLAR_NETWORK ?? 'testnet').toLowerCase();
     this.network = raw === 'public' ? 'public' : 'testnet';
 
@@ -44,49 +59,60 @@ export class StellarService {
     successful?: boolean;
     confirmedAt?: Date;
   }> {
-    const response = await fetch(
-      `${this.horizonUrl}/transactions/${encodeURIComponent(txHash)}`,
+    return this.circuitBreakerService.execute(
+      this.horizonCircuitBreakerConfig,
+      async () => {
+        const response = await fetch(
+          `${this.horizonUrl}/transactions/${encodeURIComponent(txHash)}`,
+        );
+
+        if (response.status === 404) {
+          return { found: false };
+        }
+
+        if (!response.ok) {
+          const body = await response.text();
+          throw new Error(
+            `Horizon lookup failed (${response.status}): ${body.slice(0, 300)}`,
+          );
+        }
+
+        const payload = (await response.json()) as {
+          successful?: boolean;
+          created_at?: string;
+        };
+
+        return {
+          found: true,
+          successful: Boolean(payload.successful),
+          confirmedAt: payload.created_at
+            ? new Date(payload.created_at)
+            : undefined,
+        };
+      },
     );
-
-    if (response.status === 404) {
-      return { found: false };
-    }
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(
-        `Horizon lookup failed (${response.status}): ${body.slice(0, 300)}`,
-      );
-    }
-
-    const payload = (await response.json()) as {
-      successful?: boolean;
-      created_at?: string;
-    };
-
-    return {
-      found: true,
-      successful: Boolean(payload.successful),
-      confirmedAt: payload.created_at
-        ? new Date(payload.created_at)
-        : undefined,
-    };
   }
 
   async getAccountBalance(address: string): Promise<number> {
-    const server = new Horizon.Server(this.horizonUrl);
-    try {
-      const account = await server.loadAccount(address);
-      const nativeBalance = account.balances.find(
-        (b) => b.asset_type === 'native',
-      );
-      return nativeBalance ? parseFloat(nativeBalance.balance) : 0;
-    } catch (error) {
+    return this.circuitBreakerService.execute(
+      this.horizonCircuitBreakerConfig,
+      async () => {
+        const server = new Horizon.Server(this.horizonUrl);
+        const account = await server.loadAccount(address);
+        const nativeBalance = account.balances.find(
+          (b) => b.asset_type === 'native',
+        );
+        return nativeBalance ? parseFloat(nativeBalance.balance) : 0;
+      },
+    ).catch((error) => {
+      if (error.name === 'ServiceUnavailableException') {
+        throw error;
+      }
       this.logger.error(
         `Failed to fetch balance for ${address}: ${error.message}`,
       );
       return 0;
-    }
+    });
   }
 
   /**

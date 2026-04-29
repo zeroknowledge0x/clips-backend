@@ -12,12 +12,13 @@ export interface BruteForceConfig {
 export class BruteForceProtectionService {
   private readonly logger = new Logger(BruteForceProtectionService.name);
   private readonly config: BruteForceConfig;
-  private readonly redis = this.redisService.getClient();
+  private readonly redis: ReturnType<RedisService['getClient']>;
 
   constructor(
     private configService: ConfigService,
     private redisService: RedisService,
   ) {
+    this.redis = this.redisService.getClient();
     this.config = {
       maxAttempts: this.configService.get<number>(
         'BRUTE_FORCE_MAX_ATTEMPTS',

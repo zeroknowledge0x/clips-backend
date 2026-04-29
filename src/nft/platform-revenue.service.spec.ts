@@ -61,6 +61,7 @@ describe('PlatformRevenueService', () => {
   describe('clearCache', () => {
     it('should clear the revenue cache', async () => {
       await expect(service.clearCache()).resolves.not.toThrow();
+      expect(mockRedisService.del).toHaveBeenCalled();
     });
   });
 

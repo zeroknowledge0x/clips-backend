@@ -242,3 +242,13 @@ model EmailVerificationToken {
   @@index([userId])
   @@index([tokenHash])
 }
+
+model StellarWebhookLog {
+  id            Int      @id @default(autoincrement())
+  transactionId String   @unique
+  payload       String
+  processedAt   DateTime @default(now())
+
+  @@index([transactionId])
+  @@index([processedAt])
+}

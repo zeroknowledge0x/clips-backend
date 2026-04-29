@@ -7,6 +7,9 @@ import {
 import { StellarService } from '../stellar/stellar.service';
 import { RedisService } from '../redis/redis.service';
 import StellarSdk from '@stellar/stellar-sdk';
+import { CacheKeyBuilder } from './cache-key.util';
+import Redis from 'ioredis';
+import { CircuitBreakerService, CircuitBreakerConfig } from '../common/circuit-breaker/circuit-breaker.service';
 
 const CACHE_TTL_SECONDS = 300; // 5 minutes
 
@@ -18,19 +21,29 @@ export interface RoyaltyInfo {
 @Injectable()
 export class RoyaltyQueryService {
   private readonly logger = new Logger(RoyaltyQueryService.name);
-  private readonly CONTRACT_ID: string;
+  private readonly redis: Redis;
+
+  private readonly CONTRACT_ID =
+    process.env.SOROBAN_NFT_CONTRACT_ID ||
+    'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEU4';
+
+  private readonly sorobanCircuitBreakerConfig: CircuitBreakerConfig = {
+    name: 'soroban-royalty-query',
+    failureThreshold: 5,
+    recoveryTimeout: 30000,
+    samplingDuration: 60000,
+  };
 
   constructor(
     private readonly stellarService: StellarService,
-    private readonly redisService: RedisService,
+    private readonly circuitBreakerService: CircuitBreakerService,
   ) {
-    const contractId = process.env.SOROBAN_NFT_CONTRACT_ID;
-    if (!contractId) {
-      throw new InternalServerErrorException(
-        'SOROBAN_NFT_CONTRACT_ID environment variable is required and must be set',
-      );
-    }
-    this.CONTRACT_ID = contractId;
+    this.redis = new Redis({
+      host: process.env.REDIS_HOST ?? 'localhost',
+      port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
+      password: process.env.REDIS_PASSWORD || undefined,
+      lazyConnect: true,
+    });
   }
 
   /**
@@ -38,7 +51,7 @@ export class RoyaltyQueryService {
    * Result is cached in Redis for 5 minutes.
    */
   async getRoyaltyInfo(mintAddress: string): Promise<RoyaltyInfo> {
-    const cacheKey = `royalty:${mintAddress}`;
+    const cacheKey = CacheKeyBuilder.royalty(mintAddress);
 
     const cached = await this.redisService.get(cacheKey);
     if (cached) {
@@ -87,8 +100,20 @@ export class RoyaltyQueryService {
 
     let simulation: Awaited<ReturnType<typeof server.simulateTransaction>>;
     try {
-      simulation = await server.simulateTransaction(tx);
+      // Simulate transaction with circuit breaker protection
+      simulation = await this.circuitBreakerService.execute(
+        this.sorobanCircuitBreakerConfig,
+        async () => server.simulateTransaction(tx),
+      );
     } catch (err) {
+      // Handle ServiceUnavailableException from circuit breaker
+      if (err.name === 'ServiceUnavailableException') {
+        this.logger.error(`Soroban service unavailable during royalty query for ${mintAddress}`);
+        throw new InternalServerErrorException(
+          'Soroban service temporarily unavailable. Please try again later.',
+        );
+      }
+
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Soroban simulation failed for token ${mintAddress}: ${msg}`);
       throw new InternalServerErrorException(

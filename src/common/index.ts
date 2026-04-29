@@ -1,0 +1,6 @@
+// Circuit Breaker
+export * from './circuit-breaker/circuit-breaker.module';
+export * from './circuit-breaker/circuit-breaker.service';
+
+// Exceptions
+export * from './exceptions/service-unavailable.exception';

@@ -11,10 +11,10 @@ import { NftMintService } from '../clips/nft-mint.service';
 import { NftOwnershipService } from './nft-ownership.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { StellarModule } from '../stellar/stellar.module';
-import { RedisModule } from '../redis/redis.module';
+import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
 
 @Module({
-  imports: [PrismaModule, StellarModule, RedisModule],
+  imports: [PrismaModule, StellarModule, CircuitBreakerModule],
   providers: [
     NftConfig,
     NftService,

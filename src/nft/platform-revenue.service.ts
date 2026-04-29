@@ -6,6 +6,7 @@ import {
 import { StellarService } from '../stellar/stellar.service';
 import { RedisService } from '../redis/redis.service';
 import StellarSdk from '@stellar/stellar-sdk';
+import { CacheKeyBuilder } from './cache-key.util';
 
 const CACHE_TTL_SECONDS = 60; // 1 minute cache for revenue data
 
@@ -43,7 +44,7 @@ export class PlatformRevenueService {
    * Result is cached in Redis for 1 minute to reduce RPC calls.
    */
   async getPlatformRevenue(): Promise<PlatformRevenueInfo> {
-    const cacheKey = 'platform:revenue:total';
+    const cacheKey = CacheKeyBuilder.platformRevenue();
 
     const cached = await this.redisService.get(cacheKey);
     if (cached) {
@@ -133,7 +134,7 @@ export class PlatformRevenueService {
    * Useful after a royalty payment is executed to get fresh data.
    */
   async clearCache(): Promise<void> {
-    await this.redisService.del('platform:revenue:total');
+    await this.redisService.del(CacheKeyBuilder.platformRevenue());
     this.logger.debug('Platform revenue cache cleared');
   }
 }

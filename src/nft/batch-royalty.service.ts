@@ -7,6 +7,7 @@ import {
 import { StellarService } from '../stellar/stellar.service';
 import { RedisService } from '../redis/redis.service';
 import StellarSdk from '@stellar/stellar-sdk';
+import { CacheKeyBuilder } from './cache-key.util';
 
 const CACHE_TTL_SECONDS = 300;
 
@@ -56,7 +57,7 @@ export class BatchRoyaltyService {
     }
 
     const normalizedIds = tokenIds.map((id) => String(id));
-    const cacheKey = `batch_royalty:${normalizedIds.join(',')}`;
+    const cacheKey = CacheKeyBuilder.batchRoyalty(normalizedIds);
 
     if (!skipCache) {
       const cached = await this.redisService.get(cacheKey);
@@ -89,7 +90,7 @@ export class BatchRoyaltyService {
       return StellarSdk.nativeToScVal(BigInt(tokenIdNum), { type: 'u128' });
     });
 
-    const tokenIdsScVal = StellarSdk.nativeToScVal(tokenIdsVec), { type: 'Vec' });
+    const tokenIdsScVal = StellarSdk.nativeToScVal(tokenIdsVec, { type: 'Vec' });
 
     const op = contract.call('batch_royalty_info', tokenIdsScVal);
 
@@ -98,7 +99,7 @@ export class BatchRoyaltyService {
       '0',
     );
 
-    const tx = new StellarSdk.TransactionBuilder(dummyAccount), {
+    const tx = new StellarSdk.TransactionBuilder(dummyAccount, {
       fee: '100',
       networkPassphrase: this.stellarService.networkPassphrase,
     })
@@ -157,7 +158,7 @@ export class BatchRoyaltyService {
 
   async clearCache(tokenIds: (string | number)[]): Promise<void> {
     const normalizedIds = tokenIds.map((id) => String(id));
-    const cacheKey = `batch_royalty:${normalizedIds.join(',')}`;
+    const cacheKey = CacheKeyBuilder.batchRoyalty(normalizedIds);
 
     await this.redisService.del(cacheKey);
     this.logger.debug(`Cleared cache for batch: ${normalizedIds.join(',')}`);
