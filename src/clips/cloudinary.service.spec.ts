@@ -1,5 +1,8 @@
+import { Test, TestingModule } from '@nestjs/testing';
 import { CloudinaryService } from './cloudinary.service';
 import { v2 as cloudinary } from 'cloudinary';
+import { CircuitBreakerService } from '../common/circuit-breaker/circuit-breaker.service';
+import { ServiceUnavailableException } from '../common/exceptions/service-unavailable.exception';
 
 jest.mock('cloudinary', () => ({
   v2: {
@@ -19,14 +22,30 @@ jest.mock('streamifier', () => ({
 
 describe('CloudinaryService', () => {
   let service: CloudinaryService;
+  let circuitBreakerService: CircuitBreakerService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
-    service = new CloudinaryService();
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        CloudinaryService,
+        CircuitBreakerService,
+      ],
+    }).compile();
+
+    service = module.get<CloudinaryService>(CloudinaryService);
+    circuitBreakerService = module.get<CircuitBreakerService>(CircuitBreakerService);
   });
 
-  describe('uploadVideoFromBuffer with retries', () => {
-    it('succeeds on first attempt', async () => {
+  afterEach(() => {
+    // Reset circuit breaker state
+    circuitBreakerService.reset('cloudinary-upload');
+    circuitBreakerService.reset('cloudinary-delete');
+  });
+
+  describe('uploadVideoFromBuffer with circuit breaker', () => {
+    it('succeeds when Cloudinary upload succeeds', async () => {
       const mockBuffer = Buffer.from('test-video');
       const mockResult = {
         secure_url: 'https://cloudinary.com/video.mp4',
@@ -45,7 +64,6 @@ describe('CloudinaryService', () => {
         mockBuffer,
         'test-clip',
         {},
-        2,
       );
 
       expect(result.secure_url).toBe('https://cloudinary.com/video.mp4');
@@ -53,71 +71,64 @@ describe('CloudinaryService', () => {
       expect(cloudinary.uploader.upload_stream).toHaveBeenCalledTimes(1);
     });
 
-    it('retries on failure and succeeds on second attempt', async () => {
-      const mockBuffer = Buffer.from('test-video');
-      const mockResult = {
-        secure_url: 'https://cloudinary.com/video.mp4',
-        public_id: 'test-clip',
-        resource_type: 'video',
-      };
-
-      let attemptCount = 0;
-      (cloudinary.uploader.upload_stream as jest.Mock).mockImplementation(
-        (options, callback) => {
-          attemptCount++;
-          if (attemptCount === 1) {
-            callback(new Error('Network timeout'), null);
-          } else {
-            callback(null, mockResult);
-          }
-          return { on: jest.fn() };
-        },
-      );
-
-      const result = await service.uploadVideoFromBuffer(
-        mockBuffer,
-        'test-clip',
-        {},
-        2,
-      );
-
-      expect(result.secure_url).toBe('https://cloudinary.com/video.mp4');
-      expect(result.error).toBeUndefined();
-      expect(cloudinary.uploader.upload_stream).toHaveBeenCalledTimes(2);
-    });
-
-    it('returns error after all retry attempts fail', async () => {
+    it('returns error result when Cloudinary returns error (circuit breaker counts as failure)', async () => {
       const mockBuffer = Buffer.from('test-video');
 
       (cloudinary.uploader.upload_stream as jest.Mock).mockImplementation(
         (options, callback) => {
-          callback(new Error('Persistent network error'), null);
+          callback(new Error('Upload failed'), null);
           return { on: jest.fn() };
         },
       );
 
-      const result = await service.uploadVideoFromBuffer(
-        mockBuffer,
-        'test-clip',
-        {},
-        2,
-      );
+      // Multiple failures will trigger circuit breaker
+      const results = [];
+      for (let i = 0; i < 6; i++) {
+        const result = await service.uploadVideoFromBuffer(
+          mockBuffer,
+          `test-clip-${i}`,
+          {},
+        );
+        results.push(result);
+      }
 
-      expect(result.secure_url).toBe('');
-      expect(result.error).toBe('Persistent network error');
-      expect(cloudinary.uploader.upload_stream).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
+      // First 5 should return error result (circuit still closed)
+      expect(results[0].error).toBe('Upload failed');
+
+      // The circuit breaker should now be open
+      const metrics = circuitBreakerService.getMetrics('cloudinary-upload');
+      expect(metrics?.failures).toBeGreaterThanOrEqual(5);
     });
 
-    it('uses exponential backoff between retries', async () => {
+    it('fails fast with ServiceUnavailableException when circuit is open', async () => {
       const mockBuffer = Buffer.from('test-video');
-      const delays: number[] = [];
-      const originalSetTimeout = global.setTimeout;
 
-      // Mock setTimeout to capture delays
-      global.setTimeout = jest.fn((callback: any, delay: number) => {
-        delays.push(delay);
-        return originalSetTimeout(callback, 0) as any;
-      }) as any;
+      // Mock to always fail
+      (cloudinary.uploader.upload_stream as jest.Mock).mockImplementation(
+        (options, callback) => {
+          callback(new Error('Upload failed'), null);
+          return { on: jest.fn() };
+        },
+      );
+
+      // Trigger 5 failures to open the circuit
+      for (let i = 0; i < 5; i++) {
+        try {
+          await service.uploadVideoFromBuffer(mockBuffer, `clip-${i}`, {});
+        } catch (e) {
+          // Expected from circuit breaker
+        }
+      }
+
+      // Next call should fail with ServiceUnavailableException
+      // Since the circuit is now open
+      await expect(
+        service.uploadVideoFromBuffer(mockBuffer, 'test-clip', {}),
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('tracks circuit breaker metrics', async () => {
+      const mockBuffer = Buffer.from('test-video');
 
       (cloudinary.uploader.upload_stream as jest.Mock).mockImplementation(
         (options, callback) => {
@@ -126,14 +137,48 @@ describe('CloudinaryService', () => {
         },
       );
 
-      await service.uploadVideoFromBuffer(mockBuffer, 'test-clip', {}, 2);
+      // Trigger some failures
+      for (let i = 0; i < 3; i++) {
+        await service.uploadVideoFromBuffer(mockBuffer, `clip-${i}`, {});
+      }
 
-      // Should have 2 delays (between attempts 1-2 and 2-3)
-      expect(delays.length).toBe(2);
-      expect(delays[0]).toBe(1000); // First retry: 1000ms
-      expect(delays[1]).toBe(2000); // Second retry: 2000ms
+      const metrics = circuitBreakerService.getMetrics('cloudinary-upload');
+      expect(metrics).toBeDefined();
+      expect(metrics?.name).toBe('cloudinary-upload');
+      expect(metrics?.failures).toBe(3);
+    });
+  });
 
-      global.setTimeout = originalSetTimeout;
+  describe('deleteClip with circuit breaker', () => {
+    it('deletes clip successfully when circuit is closed', async () => {
+      (cloudinary.uploader.destroy as jest.Mock).mockResolvedValue({ result: 'ok' });
+
+      await service.deleteClip('test-public-id');
+
+      expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(
+        'test-public-id',
+        { resource_type: 'video' },
+      );
+    });
+
+    it('handles circuit breaker open state', async () => {
+      // Mock to always fail
+      (cloudinary.uploader.destroy as jest.Mock).mockRejectedValue(
+        new Error('Delete failed'),
+      );
+
+      // Trigger 5 failures to open the circuit
+      for (let i = 0; i < 5; i++) {
+        try {
+          await service.deleteClip(`clip-${i}`);
+        } catch (e) {
+          // Expected
+        }
+      }
+
+      // Verify circuit breaker metrics
+      const metrics = circuitBreakerService.getMetrics('cloudinary-delete');
+      expect(metrics?.failures).toBeGreaterThanOrEqual(5);
     });
   });
 });

@@ -9,12 +9,14 @@ import { ClipsGateway } from './clips.gateway';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NftMintService } from './nft-mint.service';
 import { StellarModule } from '../stellar/stellar.module';
+import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
 
 @Module({
   imports: [
     BullModule.registerQueue({ name: CLIP_GENERATION_QUEUE }),
     PrismaModule,
     StellarModule,
+    CircuitBreakerModule,
   ],
   controllers: [ClipsController],
   providers: [

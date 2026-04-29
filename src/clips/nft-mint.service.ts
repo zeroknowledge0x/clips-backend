@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { StellarService } from '../stellar/stellar.service';
 import StellarSdk from '@stellar/stellar-sdk';
+import { CircuitBreakerService, CircuitBreakerConfig } from '../common/circuit-breaker/circuit-breaker.service';
 
 interface NftAttribute {
   trait_type: string;
@@ -47,9 +48,17 @@ export class NftMintService {
   );
   private readonly CREATOR_ROYALTY_BPS = 1000; // Requirement: 1000 bps for creator
 
+  private readonly sorobanCircuitBreakerConfig: CircuitBreakerConfig = {
+    name: 'soroban-nft-mint',
+    failureThreshold: 5,
+    recoveryTimeout: 30000,
+    samplingDuration: 60000,
+  };
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly stellarService: StellarService,
+    private readonly circuitBreakerService: CircuitBreakerService,
   ) {}
 
   async uploadMetadataToIPFS(clipId: number): Promise<UploadMetadataResult> {
@@ -167,8 +176,11 @@ export class NftMintService {
       const rpcUrl = this.stellarService.rpcUrl;
       const server = new StellarSdk.rpc.Server(rpcUrl);
 
-      // Load source account to get current sequence number
-      const sourceAccount = await server.getAccount(walletAddress);
+      // Load source account to get current sequence number with circuit breaker
+      const sourceAccount = await this.circuitBreakerService.execute(
+        this.sorobanCircuitBreakerConfig,
+        async () => server.getAccount(walletAddress),
+      );
 
       const contract = new StellarSdk.Contract(this.CONTRACT_ID);
 
@@ -234,6 +246,13 @@ export class NftMintService {
       ) {
         throw error;
       }
+
+      // Pass through ServiceUnavailableException from circuit breaker
+      if (error.name === 'ServiceUnavailableException') {
+        this.logger.error(`Soroban service unavailable during mint preparation: ${error.message}`);
+        throw error;
+      }
+
       const message =
         error instanceof Error ? error.message : 'unknown minting error';
       const stack = error instanceof Error ? error.stack : undefined;
@@ -423,7 +442,11 @@ export class NftMintService {
         .setTimeout(StellarSdk.TimeoutInfinite)
         .build();
 
-      const simulation = await server.simulateTransaction(tx);
+      // Simulate transaction with circuit breaker protection
+      const simulation = await this.circuitBreakerService.execute(
+        this.sorobanCircuitBreakerConfig,
+        async () => server.simulateTransaction(tx),
+      );
 
       if (simulation.error) {
         return {
@@ -458,6 +481,15 @@ export class NftMintService {
         error: isOwner ? undefined : 'Caller does not own the NFT on-chain',
       };
     } catch (error) {
+      // Handle ServiceUnavailableException from circuit breaker
+      if (error.name === 'ServiceUnavailableException') {
+        this.logger.error(`Soroban service unavailable during ownership verification`);
+        return {
+          owned: false,
+          error: 'Soroban service temporarily unavailable. Please try again later.',
+        };
+      }
+
       const message =
         error instanceof Error
           ? error.message

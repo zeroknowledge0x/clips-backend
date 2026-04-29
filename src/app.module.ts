@@ -11,14 +11,16 @@ import { NftModule } from './nft/nft.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BullModule } from '@nestjs/bullmq';
 import { VideosModule } from './videos/videos.module';
-import { AuthModule } from './auth/auth.module';
-import { PrismaModule } from './prisma/prisma.module';
 import { JobsModule } from './jobs/jobs.module';
 import { StellarModule } from './stellar/stellar.module';
 import { CsrfModule } from './csrf/csrf.module';
 import { EncryptionModule } from './encryption/encryption.module';
 import { UserPlatformModule } from './user-platform/user-platform.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { CircuitBreakerModule } from './common/circuit-breaker/circuit-breaker.module';
+import { RedisModule } from './redis/redis.module';
+import { EarningsModule } from './earnings/earnings.module';
+import { PayoutsModule } from './payouts/payouts.module';
 
 @Module({
   imports: [
@@ -67,6 +69,9 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
     SubscriptionsModule,
     NftModule,
     PayoutsModule,
+    CircuitBreakerModule,
+    RedisModule,
+    EarningsModule,
   ],
   controllers: [AppController],
   providers: [
