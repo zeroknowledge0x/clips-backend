@@ -7,6 +7,7 @@ import * as bodyParser from 'body-parser';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AppModule } from './app.module';
+import { AppLoggerService } from './logger/logger.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);

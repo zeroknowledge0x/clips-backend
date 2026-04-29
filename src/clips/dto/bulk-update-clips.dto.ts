@@ -53,6 +53,6 @@ export class BulkUpdateClipsDto {
   @IsOptional()
   @IsInt()
   @Min(0)
-  @Max(1500)
+  @Max(10000)
   royaltyBps?: number;
 }

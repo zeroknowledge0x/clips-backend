@@ -21,17 +21,22 @@ import {
 import type { Request } from 'express';
 import { ClipsService } from './clips.service.js';
 import type { ClipSortField, SortOrder } from './clips.service.js';
-import type { ClipGenerationJob } from './clip-generation.processor.js';
+import { CreateClipDto } from './dto/create-clip.dto.js';
 import type { BulkUpdateClipsDto } from './dto/bulk-update-clips.dto.js';
 import { LoginGuard } from '../auth/guards/login.guard.js';
 import { BulkDeleteClipsDto } from './dto/bulk-delete-clips.dto.js';
+import { PublishClipDto } from './dto/publish-clip.dto.js';
+import { ClipPublishService } from './clip-publish.service.js';
 
 @ApiTags('clips')
 @ApiBearerAuth('access-token')
 @UseGuards(LoginGuard)
 @Controller('clips')
 export class ClipsController {
-  constructor(private readonly clipsService: ClipsService) {}
+  constructor(
+    private readonly clipsService: ClipsService,
+    private readonly clipPublishService: ClipPublishService,
+  ) {}
 
   @Post('generate')
   @ApiOperation({

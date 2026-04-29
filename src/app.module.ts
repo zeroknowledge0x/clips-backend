@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -49,6 +49,30 @@ import { EarningsModule } from './earnings/earnings.module';
             ttl: 60000,
             limit: 10,
           },
+          // 3 requests per 15 minutes — magic-link, forgot-password
+          {
+            name: 'sensitive',
+            ttl: 900000,
+            limit: 3,
+          },
+          // 3 requests per hour — email verification resend
+          {
+            name: 'emailVerify',
+            ttl: 3600000,
+            limit: 3,
+          },
+          // 10 requests per minute — clip generation (per user)
+          {
+            name: 'clipGenerate',
+            ttl: 60000,
+            limit: 10,
+          },
+          // 5 requests per minute — NFT mint (per user)
+          {
+            name: 'nftMint',
+            ttl: 60000,
+            limit: 5,
+          },
         ],
         skipIf: (context) => {
           const request = context.switchToHttp().getRequest();
@@ -59,6 +83,7 @@ import { EarningsModule } from './earnings/earnings.module';
         },
       }),
     }),
+    LoggerModule,
     AuthModule,
     ClipsModule,
     VideosModule,
@@ -83,4 +108,8 @@ import { EarningsModule } from './earnings/earnings.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestIdMiddleware).forRoutes('*');
+  }
+}

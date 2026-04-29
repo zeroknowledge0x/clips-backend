@@ -25,7 +25,9 @@ import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.
     CloudinaryService,
     ClipsGateway,
     NftMintService,
+    AyrshareService,
+    ClipPublishService,
   ],
-  exports: [ClipsService, CloudinaryService, ClipsGateway, NftMintService],
+  exports: [ClipsService, CloudinaryService, ClipsGateway, NftMintService, ClipPublishService],
 })
 export class ClipsModule {}

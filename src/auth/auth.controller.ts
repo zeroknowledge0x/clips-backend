@@ -244,6 +244,7 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'Invalid email format' })
   @ApiResponse({ status: 429, description: 'Too many requests' })
   @HttpCode(HttpStatus.OK)
+  @Throttle({ sensitive: { limit: 3, ttl: 900000 } })
   async forgotPassword(
     @Body(new ValidationPipe({ transform: true })) dto: ForgotPasswordDto,
   ) {
