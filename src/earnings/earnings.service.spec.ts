@@ -163,4 +163,66 @@ describe('EarningsService', () => {
       );
     });
   });
+
+  describe('getLeaderboard', () => {
+    it('should return empty array when LEADERBOARD_ENABLED is not true', async () => {
+      delete process.env.LEADERBOARD_ENABLED;
+
+      const result = await service.getLeaderboard();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should return empty array when no earnings exist', async () => {
+      process.env.LEADERBOARD_ENABLED = 'true';
+      mockPrismaService.earning.findMany.mockResolvedValue([]);
+
+      const result = await service.getLeaderboard();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should return anonymized ranked creators', async () => {
+      process.env.LEADERBOARD_ENABLED = 'true';
+      mockPrismaService.earning.findMany.mockResolvedValue([
+        { amount: 100, clip: { video: { userId: 1 } } },
+        { amount: 200, clip: { video: { userId: 2 } } },
+        { amount: 50, clip: { video: { userId: 1 } } },
+      ]);
+
+      const result = await service.getLeaderboard();
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({ rank: 1, label: 'Creator #1', totalEarned: 200 });
+      expect(result[1]).toEqual({ rank: 2, label: 'Creator #2', totalEarned: 150 });
+    });
+
+    it('should respect limit parameter', async () => {
+      process.env.LEADERBOARD_ENABLED = 'true';
+      mockPrismaService.earning.findMany.mockResolvedValue([
+        { amount: 100, clip: { video: { userId: 1 } } },
+        { amount: 200, clip: { video: { userId: 2 } } },
+        { amount: 300, clip: { video: { userId: 3 } } },
+      ]);
+
+      const result = await service.getLeaderboard(2);
+
+      expect(result).toHaveLength(2);
+      expect(result[0].totalEarned).toBe(300);
+      expect(result[1].totalEarned).toBe(200);
+    });
+
+    it('should not expose user IDs in results', async () => {
+      process.env.LEADERBOARD_ENABLED = 'true';
+      mockPrismaService.earning.findMany.mockResolvedValue([
+        { amount: 100, clip: { video: { userId: 42 } } },
+      ]);
+
+      const result = await service.getLeaderboard();
+
+      const resultStr = JSON.stringify(result);
+      expect(resultStr).not.toContain('42');
+      expect(resultStr).not.toContain('userId');
+    });
+  });
 });

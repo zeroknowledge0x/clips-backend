@@ -20,6 +20,12 @@ export interface EarningsDashboard {
   history: EarningsHistoryItem[];
 }
 
+export interface LeaderboardEntry {
+  rank: number;
+  label: string;
+  totalEarned: number;
+}
+
 @Injectable()
 export class EarningsService {
   private readonly logger = new Logger(EarningsService.name);
@@ -113,5 +119,36 @@ export class EarningsService {
     this.logger.log(`Soft-deleted earning ${earningId} for user ${userId}`);
 
     return { message: 'Earning deleted successfully' };
+  }
+
+  async getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
+    const enabled = process.env.LEADERBOARD_ENABLED === 'true';
+    if (!enabled) {
+      return [];
+    }
+
+    const earnings = await this.prisma.earning.findMany({
+      where: { deletedAt: null },
+      select: {
+        amount: true,
+        clip: { select: { video: { select: { userId: true } } } },
+      },
+    });
+
+    const totals = new Map<number, number>();
+    for (const e of earnings) {
+      const uid = e.clip.video.userId;
+      totals.set(uid, (totals.get(uid) ?? 0) + e.amount);
+    }
+
+    const sorted = Array.from(totals.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit);
+
+    return sorted.map(([, total], index) => ({
+      rank: index + 1,
+      label: `Creator #${index + 1}`,
+      totalEarned: total,
+    }));
   }
 }
