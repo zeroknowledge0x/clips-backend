@@ -1,5 +1,20 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { buildEarningsCsv } from './earnings-csv.util';
+
+export interface EarningsExportOptions {
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface EarningsExportResult {
+  filename: string;
+  content: string;
+}
 
 export interface EarningsBreakdown {
   royalties: number;
@@ -89,5 +104,87 @@ export class EarningsService {
       },
       history: paginatedHistory,
     };
+  }
+
+  async exportEarningsCsv(
+    userId: number,
+    options: EarningsExportOptions,
+  ): Promise<EarningsExportResult> {
+    const dateRange = this.parseExportDateRange(
+      options.startDate,
+      options.endDate,
+    );
+
+    const earnings = await this.prisma.earning.findMany({
+      where: {
+        clip: { video: { userId } },
+        ...(dateRange
+          ? { date: { gte: dateRange.start, lte: dateRange.end } }
+          : {}),
+      },
+      select: {
+        id: true,
+        amount: true,
+        currency: true,
+        date: true,
+        source: true,
+        clip: { select: { title: true } },
+      },
+      orderBy: { date: 'asc' },
+    });
+
+    const rows = earnings.map((earning) => [
+      earning.date.toISOString(),
+      earning.clip.title ?? '',
+      earning.amount,
+      earning.currency,
+      earning.source ?? '',
+      String(earning.id),
+    ]);
+
+    const filename = this.buildExportFilename(dateRange);
+    return {
+      filename,
+      content: buildEarningsCsv(rows),
+    };
+  }
+
+  private parseExportDateRange(
+    startDate?: string,
+    endDate?: string,
+  ): { start: Date; end: Date } | null {
+    if (!startDate && !endDate) {
+      return null;
+    }
+    if (!startDate || !endDate) {
+      throw new BadRequestException(
+        'Both startDate and endDate are required for a custom date range',
+      );
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      throw new BadRequestException(
+        'startDate and endDate must be valid ISO date strings',
+      );
+    }
+    if (start > end) {
+      throw new BadRequestException('startDate must be on or before endDate');
+    }
+
+    end.setUTCHours(23, 59, 59, 999);
+    return { start, end };
+  }
+
+  private buildExportFilename(
+    dateRange: { start: Date; end: Date } | null,
+  ): string {
+    if (!dateRange) {
+      return 'earnings-export.csv';
+    }
+    const start = dateRange.start.toISOString().slice(0, 10);
+    const end = dateRange.end.toISOString().slice(0, 10);
+    return `earnings-export-${start}-to-${end}.csv`;
   }
 }
