@@ -1,7 +1,15 @@
+jest.mock('../stellar/stellar.service', () => ({
+  StellarService: jest.fn().mockImplementation(() => ({
+    horizonUrl: 'https://horizon-testnet.stellar.org',
+    networkPassphrase: 'Test SDF Network ; September 2015',
+  })),
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { PayoutsService } from './payouts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StellarService } from '../stellar/stellar.service';
+import { EarningsService } from '../earnings/earnings.service';
 import {
   ConflictException,
   BadRequestException,
@@ -24,9 +32,10 @@ describe('PayoutsService', () => {
     wallet: {
       findFirst: jest.fn(),
     },
-    earning: {
-      aggregate: jest.fn(),
-    },
+  };
+
+  const mockEarningsService = {
+    getUserTotalEarnings: jest.fn(),
   };
 
   const mockStellarService = {
@@ -45,6 +54,10 @@ describe('PayoutsService', () => {
         {
           provide: StellarService,
           useValue: mockStellarService,
+        },
+        {
+          provide: EarningsService,
+          useValue: mockEarningsService,
         },
       ],
     }).compile();
@@ -89,8 +102,9 @@ describe('PayoutsService', () => {
         id: 1,
         address: 'GTEST...',
       });
-      mockPrismaService.earning.aggregate.mockResolvedValue({
-        _sum: { amount: 3 },
+      mockEarningsService.getUserTotalEarnings.mockResolvedValue({
+        total: 3,
+        breakdown: { royalties: 3, subscriptions: 0 },
       });
       mockPrismaService.payout.aggregate.mockResolvedValue({
         _sum: { amount: 0 },

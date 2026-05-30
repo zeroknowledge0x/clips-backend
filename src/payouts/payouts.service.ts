@@ -9,6 +9,7 @@ import {
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { PrismaService } from '../prisma/prisma.service';
 import { StellarService } from '../stellar/stellar.service';
+import { EarningsService } from '../earnings/earnings.service';
 
 @Injectable()
 export class PayoutsService {
@@ -18,6 +19,7 @@ export class PayoutsService {
   constructor(
     private prisma: PrismaService,
     private stellarService: StellarService,
+    private earningsService: EarningsService,
   ) {
     this.minPayoutAmount = parseFloat(
       process.env.MIN_STELLAR_PAYOUT ?? '5',
@@ -52,11 +54,8 @@ export class PayoutsService {
       );
     }
 
-    // Calculate user's pending balance from earnings
-    const totalEarnings = await this.prisma.earning.aggregate({
-      where: { clip: { video: { userId } } },
-      _sum: { amount: true },
-    });
+    const { total: totalEarned } =
+      await this.earningsService.getUserTotalEarnings(userId);
 
     const totalPaidOut = await this.prisma.payout.aggregate({
       where: { userId, status: { in: ['completed', 'processing'] } },
@@ -64,8 +63,7 @@ export class PayoutsService {
     });
 
     const pendingBalance =
-      (totalEarnings._sum.amount ?? 0) -
-      (totalPaidOut._sum.amount ?? 0);
+      totalEarned - (totalPaidOut._sum.amount ?? 0);
 
     if (pendingBalance < this.minPayoutAmount) {
       throw new BadRequestException(
