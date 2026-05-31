@@ -19,6 +19,7 @@ import { EmailDeliveryService } from './email-delivery.service';
 import { EmailDeliveryProcessor } from './email-delivery.processor';
 import { EncryptionModule } from '../encryption/encryption.module';
 import { StellarModule } from '../stellar/stellar.module';
+import { AdminGuard } from './guards/admin.guard';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { StellarModule } from '../stellar/stellar.module';
     BruteForceProtectionService,
     EmailDeliveryService,
     EmailDeliveryProcessor,
+    AdminGuard,
   ],
 })
 export class AuthModule {}
