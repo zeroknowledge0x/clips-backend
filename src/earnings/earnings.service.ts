@@ -1,5 +1,16 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { buildEarningsCsv } from './earnings-csv.util';
+
+export interface EarningsExportOptions {
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface EarningsExportResult {
+  filename: string;
+  content: string;
+}
 
 export interface EarningsBreakdown {
   royalties: number;
