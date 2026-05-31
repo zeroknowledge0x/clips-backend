@@ -27,7 +27,7 @@ import { LoggerModule } from './logger/logger.module';
 import { RequestIdMiddleware } from './logger/request-id.middleware';
 import { UsersModule } from './users/users.module';
 import { TransactionsModule } from './transactions/transactions.module';
-import { WebhooksModule } from './webhooks/webhooks.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -108,7 +108,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     WalletsModule,
     UsersModule,
     TransactionsModule,
-    WebhooksModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [
