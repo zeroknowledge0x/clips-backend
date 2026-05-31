@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildEarningsCsv } from './earnings-csv.util';
 
@@ -35,6 +31,12 @@ export interface EarningsDashboard {
   history: EarningsHistoryItem[];
 }
 
+export interface LeaderboardEntry {
+  rank: number;
+  label: string;
+  totalEarned: number;
+}
+
 @Injectable()
 export class EarningsService {
   private readonly logger = new Logger(EarningsService.name);
@@ -47,7 +49,7 @@ export class EarningsService {
     limit = 20,
   ): Promise<EarningsDashboard> {
     const earnings = await this.prisma.earning.findMany({
-      where: { clip: { video: { userId } } },
+      where: { clip: { video: { userId } }, deletedAt: null },
       select: { amount: true, source: true, date: true },
     });
 
@@ -106,85 +108,58 @@ export class EarningsService {
     };
   }
 
-  async exportEarningsCsv(
-    userId: number,
-    options: EarningsExportOptions,
-  ): Promise<EarningsExportResult> {
-    const dateRange = this.parseExportDateRange(
-      options.startDate,
-      options.endDate,
-    );
-
-    const earnings = await this.prisma.earning.findMany({
-      where: {
-        clip: { video: { userId } },
-        ...(dateRange
-          ? { date: { gte: dateRange.start, lte: dateRange.end } }
-          : {}),
-      },
-      select: {
-        id: true,
-        amount: true,
-        currency: true,
-        date: true,
-        source: true,
-        clip: { select: { title: true } },
-      },
-      orderBy: { date: 'asc' },
+  async softDelete(earningId: number, userId: number): Promise<{ message: string }> {
+    const earning = await this.prisma.earning.findUnique({
+      where: { id: earningId },
+      include: { clip: { include: { video: { select: { userId: true } } } } },
     });
 
-    const rows = earnings.map((earning) => [
-      earning.date.toISOString(),
-      earning.clip.title ?? '',
-      earning.amount,
-      earning.currency,
-      earning.source ?? '',
-      String(earning.id),
-    ]);
+    if (!earning || earning.clip.video.userId !== userId) {
+      throw new NotFoundException(`Earning ${earningId} not found`);
+    }
 
-    const filename = this.buildExportFilename(dateRange);
-    return {
-      filename,
-      content: buildEarningsCsv(rows),
-    };
+    if (earning.deletedAt !== null) {
+      throw new NotFoundException(`Earning ${earningId} not found`);
+    }
+
+    await this.prisma.earning.update({
+      where: { id: earningId },
+      data: { deletedAt: new Date() },
+    });
+
+    this.logger.log(`Soft-deleted earning ${earningId} for user ${userId}`);
+
+    return { message: 'Earning deleted successfully' };
   }
 
-  private parseExportDateRange(
-    startDate?: string,
-    endDate?: string,
-  ): { start: Date; end: Date } | null {
-    if (!startDate && !endDate) {
-      return null;
-    }
-    if (!startDate || !endDate) {
-      throw new BadRequestException(
-        'Both startDate and endDate are required for a custom date range',
-      );
+  async getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
+    const enabled = process.env.LEADERBOARD_ENABLED === 'true';
+    if (!enabled) {
+      return [];
     }
 
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      throw new BadRequestException(
-        'startDate and endDate must be valid ISO date strings',
-      );
-    }
-    if (start > end) {
-      throw new BadRequestException('startDate must be on or before endDate');
+    const earnings = await this.prisma.earning.findMany({
+      where: { deletedAt: null },
+      select: {
+        amount: true,
+        clip: { select: { video: { select: { userId: true } } } },
+      },
+    });
+
+    const totals = new Map<number, number>();
+    for (const e of earnings) {
+      const uid = e.clip.video.userId;
+      totals.set(uid, (totals.get(uid) ?? 0) + e.amount);
     }
 
-    end.setUTCHours(23, 59, 59, 999);
-    return { start, end };
-  }
+    const sorted = Array.from(totals.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit);
 
-  private buildExportFilename(
-    dateRange: { start: Date; end: Date } | null,
-  ): string {
-    if (!dateRange) {
-      return 'earnings-export.csv';
-    }
-    const start = dateRange.start.toISOString().slice(0, 10);
-    const end = dateRange.end.toISOString().slice(0, 10);
-    return `earnings-export-${start}-to-${end}.csv`;
+    return sorted.map(([, total], index) => ({
+      rank: index + 1,
+      label: `Creator #${index + 1}`,
+      totalEarned: total,
+    }));
   }
 }
