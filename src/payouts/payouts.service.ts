@@ -230,4 +230,51 @@ export class PayoutsService {
       );
     }
   }
+
+  /**
+   * Verify pending payouts that have an on-chain transaction hash recorded.
+   * This will query Horizon for the transaction status and update the payout
+   * record to `completed` or `failed` accordingly, and set `confirmedAt`.
+   */
+  async verifyPendingPayouts(): Promise<void> {
+    const pending = await this.prisma.payout.findMany({
+      where: {
+        onChainTxHash: { not: null },
+        status: { in: ['pending', 'processing'] },
+      },
+    });
+
+    for (const p of pending) {
+      try {
+        const txHash = p.onChainTxHash as string;
+        const status = await this.stellarService.getTransactionStatus(txHash);
+
+        if (!status.found) {
+          this.logger.debug(`Horizon: transaction ${txHash} not found yet`);
+          continue;
+        }
+
+        if (status.successful) {
+          await this.prisma.payout.update({
+            where: { id: p.id },
+            data: {
+              status: 'completed',
+              confirmedAt: status.confirmedAt ?? new Date(),
+            },
+          });
+
+          this.logger.log(`Payout ${p.id} marked completed (tx=${txHash})`);
+        } else {
+          await this.prisma.payout.update({
+            where: { id: p.id },
+            data: { status: 'failed', confirmedAt: status.confirmedAt ?? new Date() },
+          });
+
+          this.logger.warn(`Payout ${p.id} marked failed (tx=${txHash})`);
+        }
+      } catch (err) {
+        this.logger.error(`Failed verifying payout ${p.id}: ${err?.message ?? err}`);
+      }
+    }
+  }
 }
