@@ -32,9 +32,10 @@ describe('PayoutsService', () => {
     wallet: {
       findFirst: jest.fn(),
     },
-    earning: {
-      aggregate: jest.fn(),
-    },
+  };
+
+  const mockEarningsService = {
+    getUserTotalEarnings: jest.fn(),
   };
 
   const mockStellarService = {
@@ -104,8 +105,9 @@ describe('PayoutsService', () => {
         id: 1,
         address: 'GTEST...',
       });
-      mockPrismaService.earning.aggregate.mockResolvedValue({
-        _sum: { amount: 3 },
+      mockEarningsService.getUserTotalEarnings.mockResolvedValue({
+        total: 3,
+        breakdown: { royalties: 3, subscriptions: 0 },
       });
       mockPrismaService.payout.aggregate.mockResolvedValue({
         _sum: { amount: 0 },

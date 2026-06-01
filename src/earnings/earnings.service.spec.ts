@@ -5,7 +5,6 @@ import { PrismaService } from '../prisma/prisma.service';
 
 describe('EarningsService', () => {
   let service: EarningsService;
-  let prisma: jest.Mocked<PrismaService>;
 
   const mockPrismaService = {
     earning: {
@@ -16,9 +15,19 @@ describe('EarningsService', () => {
     payout: {
       findMany: jest.fn(),
     },
+    $transaction: jest.fn(),
   };
 
   beforeEach(async () => {
+    mockPrismaService.$transaction.mockImplementation(
+      async (arg: unknown) => {
+        if (typeof arg === 'function') {
+          return arg(mockPrismaService);
+        }
+        return Promise.all(arg as Promise<unknown>[]);
+      },
+    );
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EarningsService,
@@ -30,7 +39,6 @@ describe('EarningsService', () => {
     }).compile();
 
     service = module.get<EarningsService>(EarningsService);
-    prisma = module.get(PrismaService);
   });
 
   afterEach(() => {
@@ -39,6 +47,80 @@ describe('EarningsService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('getUserTotalEarnings', () => {
+    it('should aggregate royalties and subscriptions', async () => {
+      mockPrismaService.earning.findMany.mockResolvedValue([
+        { amount: 100, source: 'royalty' },
+        { amount: 50, source: 'subscription' },
+        { amount: 25, source: 'royalty' },
+      ]);
+
+      const result = await service.getUserTotalEarnings(1);
+
+      expect(result.total).toBe(175);
+      expect(result.breakdown).toEqual({
+        royalties: 125,
+        subscriptions: 50,
+      });
+      expect(mockPrismaService.$transaction).toHaveBeenCalled();
+    });
+
+    it('should return zero totals when user has no earnings', async () => {
+      mockPrismaService.earning.findMany.mockResolvedValue([]);
+
+      const result = await service.getUserTotalEarnings(1);
+
+      expect(result).toEqual({
+        total: 0,
+        breakdown: { royalties: 0, subscriptions: 0 },
+      });
+    });
+  });
+
+  describe('getEarningsByPeriod', () => {
+    it('should return earnings within the date range', async () => {
+      mockPrismaService.earning.findMany.mockResolvedValue([
+        {
+          id: 1,
+          amount: 80,
+          source: 'royalty',
+          date: new Date('2024-06-01T00:00:00.000Z'),
+          clip: { title: 'Summer clip' },
+        },
+      ]);
+
+      const result = await service.getEarningsByPeriod(
+        1,
+        new Date('2024-01-01'),
+        new Date('2024-12-31'),
+      );
+
+      expect(result.total).toBe(80);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].clipTitle).toBe('Summer clip');
+      expect(mockPrismaService.earning.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            date: expect.objectContaining({
+              gte: expect.any(Date),
+              lte: expect.any(Date),
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('should throw when startDate is after endDate', async () => {
+      await expect(
+        service.getEarningsByPeriod(
+          1,
+          new Date('2024-12-31'),
+          new Date('2024-01-01'),
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
   describe('getEarningsDashboard', () => {
@@ -55,9 +137,10 @@ describe('EarningsService', () => {
         breakdown: { royalties: 0, subscriptions: 0 },
         history: [],
       });
+      expect(mockPrismaService.$transaction).toHaveBeenCalled();
     });
 
-    it('should return 200 with earnings data when user has earnings', async () => {
+    it('should return earnings data when user has earnings', async () => {
       const earnings = [
         {
           amount: 100,
