@@ -172,9 +172,21 @@ export class AuthService {
       .update(rawToken)
       .digest('hex');
 
+    // Performance: Use select to fetch only needed user fields for JWT generation (optimization #326)
     const stored = await this.prisma.refreshToken.findUnique({
       where: { tokenHash },
-      include: { user: true },
+      select: {
+        id: true,
+        expiresAt: true,
+        revokedAt: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
     });
 
     if (!stored || stored.revokedAt) {
@@ -451,9 +463,21 @@ export class AuthService {
       .update(rawToken)
       .digest('hex');
 
+    // Performance: Use select to fetch only needed user fields (optimization #326)
     const magicLink = await this.prisma.magicLink.findUnique({
       where: { tokenHash },
-      include: { user: true },
+      select: {
+        id: true,
+        usedAt: true,
+        expiresAt: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
     });
 
     if (!magicLink) {
@@ -521,9 +545,19 @@ export class AuthService {
       .createHash('sha256')
       .update(rawToken)
       .digest('hex');
+    // Performance: Use select to fetch only needed fields (optimization #326)
     const resetToken = await this.prisma.passwordResetToken.findUnique({
       where: { tokenHash },
-      include: { user: true },
+      select: {
+        id: true,
+        expiresAt: true,
+        usedAt: true,
+        user: {
+          select: {
+            id: true,
+          },
+        },
+      },
     });
 
     if (!resetToken) {

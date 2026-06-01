@@ -136,6 +136,7 @@ When running in **development mode** (`NODE_ENV !== 'production'`):
 
 - **Swagger UI**: <http://localhost:3000/api/docs>
 - **OpenAPI JSON**: <http://localhost:3000/api/docs-json> (or `openapi.json` file)
+- **Rate Limits**: See [docs/rate-limits.md](./docs/rate-limits.md) for detailed rate limiting documentation
 
 ### Authentication
 
