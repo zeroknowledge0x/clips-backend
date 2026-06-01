@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Public } from '../auth/decorators/public.decorator';
 import { EarningsService } from './earnings.service';
 import { Request, Response } from 'express';
+import { Currency } from './earnings.types';
 
 interface RequestWithUser extends Request {
   user: { userId: number };
@@ -53,6 +54,7 @@ export class EarningsController {
     @Req() req: RequestWithUser,
     @Query('page') page = '1',
     @Query('limit') limit = '20',
+    @Query('currency') currency: Currency = Currency.USD,
   ) {
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 20;
@@ -61,6 +63,7 @@ export class EarningsController {
       req.user.userId,
       pageNum,
       limitNum,
+      currency,
     );
   }
 

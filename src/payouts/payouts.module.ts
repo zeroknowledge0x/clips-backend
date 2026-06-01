@@ -1,17 +1,8 @@
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
 import { PayoutsService } from './payouts.service';
 import { PayoutReceiptService } from './payout-receipt.service';
 import { PayoutsController } from './payouts.controller';
-import { AdminPayoutsController } from './admin-payouts.controller';
-import { PrismaModule } from '../prisma/prisma.module';
-import { StellarModule } from '../stellar/stellar.module';
-import { AdminGuard } from '../common/guards/admin.guard';
-
-@Module({
-  imports: [PrismaModule, StellarModule],
-  controllers: [PayoutsController, AdminPayoutsController],
-  providers: [PayoutsService, PayoutReceiptService, AdminGuard],
-  exports: [PayoutsService],
 import { AdminPayoutsController } from './admin.controller';
 import { AdminFeesController } from './fees.controller';
 import { FeeService } from './fee.service';
@@ -21,9 +12,22 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { StellarModule } from '../stellar/stellar.module';
 import { AuthModule } from '../auth/auth.module';
 import { EncryptionModule } from '../encryption/encryption.module';
+import { MetricsModule } from '../metrics/metrics.module';
+import { PayoutRetryProcessor } from './payout-retry.processor';
+import { PAYOUT_RETRY_QUEUE, PAYOUT_RETRY_QUEUE_PRIORITY } from './payout-retry.queue';
 
 @Module({
-  imports: [PrismaModule, StellarModule, AuthModule, EncryptionModule],
+  imports: [
+    PrismaModule,
+    StellarModule,
+    AuthModule,
+    EncryptionModule,
+    MetricsModule,
+    BullModule.registerQueue({
+      name: PAYOUT_RETRY_QUEUE,
+      defaultJobOptions: { priority: PAYOUT_RETRY_QUEUE_PRIORITY },
+    }),
+  ],
   controllers: [
     PayoutsController,
     AdminPayoutsController,
@@ -35,6 +39,7 @@ import { EncryptionModule } from '../encryption/encryption.module';
     PayoutReceiptService,
     FeeService,
     PayoutMethodService,
+    PayoutRetryProcessor,
   ],
   exports: [PayoutsService, FeeService, PayoutMethodService],
 })

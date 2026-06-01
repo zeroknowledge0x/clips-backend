@@ -1,6 +1,9 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildEarningsCsv } from './earnings-csv.util';
+import { Currency, EarningsBreakdown, EarningsDashboard, EarningsHistoryItem, EarningsByPeriod, EarningsPeriodItem, UserTotalEarnings } from './earnings.types';
+import { CurrencyConversionService } from './currency-conversion.service';
+import { RedisService } from '../redis/redis.service';
 
 export interface EarningsExportOptions {
   startDate?: string;
@@ -12,17 +15,6 @@ export interface EarningsExportResult {
   content: string;
 }
 
-export interface EarningsBreakdown {
-  royalties: number;
-  subscriptions: number;
-}
-
-export interface EarningsHistoryItem {
-  date: string;
-  amount: number;
-  source: string | null;
-};
-
 export interface LeaderboardEntry {
   rank: number;
   label: string;
@@ -32,24 +24,106 @@ export interface LeaderboardEntry {
 @Injectable()
 export class EarningsService {
   private readonly logger = new Logger(EarningsService.name);
+  private readonly TTL_SECONDS = parseInt(process.env.EARNINGS_CACHE_TTL ?? '3600'); // Default 1 hour
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private currencyConversion: CurrencyConversionService,
+    private redisService: RedisService,
+  ) {}
 
-  async getUserTotalEarnings(userId: number): Promise<UserTotalEarnings> {
+  private getCacheKey(userId: number, targetCurrency: Currency): string {
+    return `earnings:user:${userId}:total:${targetCurrency}`;
+  }
+
+  public async invalidateUserEarningsCache(userId: number): Promise<void> {
+    // Invalidate for all supported currencies
+    const currencies = Object.values(Currency);
+    for (const currency of currencies) {
+      const key = this.getCacheKey(userId, currency);
+      await this.redisService.del(key);
+    }
+  }
+
+  private userEarningsWhere(userId: number) {
+    return {
+      clip: { video: { userId } },
+      deletedAt: null,
+    };
+  }
+
+  private validatePeriod(startDate: Date, endDate: Date) {
+    if (startDate > endDate) {
+      throw new Error('Start date must be before end date');
+    }
+  }
+
+  private aggregateEarnings(
+    earnings: Array<{ amount: number; currency: string; source: string | null }>,
+    targetCurrency: Currency = Currency.USD,
+  ): { total: number; breakdown: EarningsBreakdown } {
+    let total = 0;
+    let royalties = 0;
+    let subscriptions = 0;
+
+    for (const e of earnings) {
+      const convertedAmount = this.currencyConversion.convert(
+        e.amount,
+        (e.currency as Currency) || Currency.USD,
+        targetCurrency,
+      );
+
+      total += convertedAmount;
+
+      if (e.source === 'royalty') {
+        royalties += convertedAmount;
+      } else if (e.source === 'subscription') {
+        subscriptions += convertedAmount;
+      }
+    }
+
+    return { total, breakdown: { royalties, subscriptions } };
+  }
+
+  async getUserTotalEarnings(
+    userId: number,
+    targetCurrency: Currency = Currency.USD,
+  ): Promise<UserTotalEarnings> {
+    const cacheKey = this.getCacheKey(userId, targetCurrency);
+
+    // Try to get from cache first
+    const cached = await this.redisService.get(cacheKey);
+    if (cached) {
+      this.logger.log(`Cache hit for user ${userId} earnings total in ${targetCurrency}`);
+      return JSON.parse(cached) as UserTotalEarnings;
+    }
+
+    // Cache miss, compute from DB
+    this.logger.log(`Cache miss for user ${userId} earnings total in ${targetCurrency}`);
     const earnings = await this.prisma.$transaction((tx) =>
       tx.earning.findMany({
         where: this.userEarningsWhere(userId),
-        select: { amount: true, source: true },
+        select: { amount: true, currency: true, source: true },
       }),
     );
 
-    return this.aggregateEarnings(earnings);
+    const aggregated = this.aggregateEarnings(earnings, targetCurrency);
+    const result = {
+      ...aggregated,
+      currency: targetCurrency,
+    };
+
+    // Save to cache
+    await this.redisService.setex(cacheKey, this.TTL_SECONDS, JSON.stringify(result));
+
+    return result;
   }
 
   async getEarningsByPeriod(
     userId: number,
     startDate: Date,
     endDate: Date,
+    targetCurrency: Currency = Currency.USD,
   ): Promise<EarningsByPeriod> {
     this.validatePeriod(startDate, endDate);
 
@@ -65,6 +139,7 @@ export class EarningsService {
         select: {
           id: true,
           amount: true,
+          currency: true,
           source: true,
           date: true,
           clip: { select: { title: true } },
@@ -73,20 +148,29 @@ export class EarningsService {
       }),
     );
 
-    const aggregated = this.aggregateEarnings(earnings);
+    const aggregated = this.aggregateEarnings(earnings, targetCurrency);
 
     return {
       startDate: startDate.toISOString(),
       endDate: periodEnd.toISOString(),
       total: aggregated.total,
+      currency: targetCurrency,
       breakdown: aggregated.breakdown,
-      items: earnings.map((earning) => ({
-        id: earning.id,
-        amount: earning.amount,
-        source: earning.source,
-        date: earning.date.toISOString(),
-        clipTitle: earning.clip.title,
-      })),
+      items: earnings.map((earning) => {
+        const convertedAmount = this.currencyConversion.convert(
+          earning.amount,
+          (earning.currency as Currency) || Currency.USD,
+          targetCurrency,
+        );
+        return {
+          id: earning.id,
+          amount: convertedAmount,
+          currency: targetCurrency,
+          source: earning.source,
+          date: earning.date.toISOString(),
+          clipTitle: earning.clip.title,
+        };
+      }),
     };
   }
 
@@ -94,44 +178,56 @@ export class EarningsService {
     userId: number,
     page = 1,
     limit = 20,
+    targetCurrency: Currency = Currency.USD,
   ): Promise<EarningsDashboard> {
     const earnings = await this.prisma.earning.findMany({
       where: { clip: { video: { userId } }, deletedAt: null },
-      select: { amount: true, source: true, date: true },
+      select: { amount: true, currency: true, source: true, date: true },
     });
 
-    const royalties = earnings
-      .filter((e) => e.source === 'royalty')
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    const subscriptions = earnings
-      .filter((e) => e.source === 'subscription')
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    const totalEarned = royalties + subscriptions;
+    const aggregated = this.aggregateEarnings(earnings, targetCurrency);
+    const totalEarned = aggregated.total;
 
     const payouts = await this.prisma.payout.findMany({
       where: { userId },
-      select: { amount: true, status: true, createdAt: true },
+      select: { amount: true, currency: true, status: true, createdAt: true },
     });
 
-    const paidOut = snapshot.payouts
+    const paidOut = payouts
       .filter((p) => p.status === 'completed')
-      .reduce((sum, p) => sum + p.amount, 0);
+      .reduce((sum, p) => sum + this.currencyConversion.convert(
+        p.amount,
+        (p.currency as Currency) || Currency.USD,
+        targetCurrency,
+      ), 0);
 
-    const pendingPayout = snapshot.payouts
+    const pendingPayout = payouts
       .filter((p) => p.status === 'pending' || p.status === 'processing')
-      .reduce((sum, p) => sum + p.amount, 0);
+      .reduce((sum, p) => sum + this.currencyConversion.convert(
+        p.amount,
+        (p.currency as Currency) || Currency.USD,
+        targetCurrency,
+      ), 0);
 
     const historyItems: EarningsHistoryItem[] = [
-      ...snapshot.earnings.map((e) => ({
+      ...earnings.map((e) => ({
         date: e.date.toISOString(),
-        amount: e.amount,
+        amount: this.currencyConversion.convert(
+          e.amount,
+          (e.currency as Currency) || Currency.USD,
+          targetCurrency,
+        ),
+        currency: targetCurrency,
         type: e.source as 'royalty' | 'subscription',
       })),
-      ...snapshot.payouts.map((p) => ({
+      ...payouts.map((p) => ({
         date: p.createdAt.toISOString(),
-        amount: p.amount,
+        amount: this.currencyConversion.convert(
+          p.amount,
+          (p.currency as Currency) || Currency.USD,
+          targetCurrency,
+        ),
+        currency: targetCurrency,
         type: 'payout' as const,
       })),
     ];
@@ -144,12 +240,57 @@ export class EarningsService {
     const paginatedHistory = historyItems.slice(start, start + limit);
 
     return {
-      totalEarned: totals.total,
+      totalEarned,
+      currency: targetCurrency,
       pendingPayout,
       paidOut,
-      breakdown: totals.breakdown,
+      breakdown: aggregated.breakdown,
       history: paginatedHistory,
     };
+  }
+
+  async exportEarningsCsv(
+    userId: number,
+    options: EarningsExportOptions,
+  ): Promise<EarningsExportResult> {
+    let where = this.userEarningsWhere(userId);
+    if (options.startDate || options.endDate) {
+      where = { ...where, date: {} };
+      if (options.startDate) {
+        where.date.gte = new Date(options.startDate);
+      }
+      if (options.endDate) {
+        const end = new Date(options.endDate);
+        end.setUTCHours(23, 59, 59, 999);
+        where.date.lte = end;
+      }
+    }
+
+    const earnings = await this.prisma.earning.findMany({
+      where,
+      select: {
+        date: true,
+        amount: true,
+        currency: true,
+        source: true,
+        clip: { select: { title: true } },
+      },
+      orderBy: { date: 'desc' },
+    });
+
+    const rows = earnings.map((e) => [
+      e.date.toISOString(),
+      e.clip?.title,
+      e.amount,
+      e.currency,
+      e.source,
+      '',
+    ]);
+
+    const content = buildEarningsCsv(rows);
+    const filename = `earnings-export-${new Date().toISOString().split('T')[0]}.csv`;
+
+    return { filename, content };
   }
 
   async softDelete(earningId: number, userId: number): Promise<{ message: string }> {
@@ -171,7 +312,10 @@ export class EarningsService {
       data: { deletedAt: new Date() },
     });
 
-    this.logger.log(`Soft-deleted earning ${earningId} for user ${userId}`);
+    // Invalidate cache for the user
+    await this.invalidateUserEarningsCache(userId);
+
+    this.logger.log(`Soft-deleted earning ${earningId} for user ${userId} and invalidated cache`);
 
     return { message: 'Earning deleted successfully' };
   }
@@ -186,6 +330,7 @@ export class EarningsService {
       where: { deletedAt: null },
       select: {
         amount: true,
+        currency: true,
         clip: { select: { video: { select: { userId: true } } } },
       },
     });
@@ -193,7 +338,12 @@ export class EarningsService {
     const totals = new Map<number, number>();
     for (const e of earnings) {
       const uid = e.clip.video.userId;
-      totals.set(uid, (totals.get(uid) ?? 0) + e.amount);
+      const convertedAmount = this.currencyConversion.convert(
+        e.amount,
+        (e.currency as Currency) || Currency.USD,
+        Currency.USD,
+      );
+      totals.set(uid, (totals.get(uid) ?? 0) + convertedAmount);
     }
 
     const sorted = Array.from(totals.entries())

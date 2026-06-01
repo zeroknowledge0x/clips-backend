@@ -8,6 +8,8 @@ import { AnomalyDetectionProcessor } from './anomaly-detection.processor';
 import { BullModule } from '@nestjs/bullmq';
 import { ANOMALY_DETECTION_QUEUE } from './anomaly-detection.queue';
 import { AuthModule } from '../auth/auth.module';
+import { CurrencyConversionService } from './currency-conversion.service';
+import { RedisModule } from '../redis/redis.module';
 
 @Module({
   imports: [
@@ -17,13 +19,15 @@ import { AuthModule } from '../auth/auth.module';
       defaultJobOptions: { priority: ANOMALY_DETECTION_QUEUE_PRIORITY },
     }),
     AuthModule,
+    RedisModule,
   ],
   controllers: [EarningsController, AdminAnomaliesController],
   providers: [
     EarningsService,
     AnomalyDetectionService,
     AnomalyDetectionProcessor,
+    CurrencyConversionService,
   ],
-  exports: [EarningsService, AnomalyDetectionService],
+  exports: [EarningsService, AnomalyDetectionService, CurrencyConversionService],
 })
 export class EarningsModule {}

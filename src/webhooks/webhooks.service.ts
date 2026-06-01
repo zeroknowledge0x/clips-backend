@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EarningsService } from '../earnings/earnings.service';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -8,7 +9,10 @@ export class WebhooksService {
   private readonly tiktokSecret = process.env.TIKTOK_WEBHOOK_SECRET;
   private readonly youtubeSecret = process.env.YOUTUBE_WEBHOOK_SECRET;
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private earningsService: EarningsService,
+  ) {}
 
   async validateTikTokSignature(payload: any, signature: string): Promise<boolean> {
     if (!this.tiktokSecret) {
@@ -136,6 +140,9 @@ export class WebhooksService {
       },
     });
 
-    this.logger.log(`Created earning for clip ${clipId} from ${platform} webhook: $${amount}`);
+    // Invalidate earnings cache for the user
+    await this.earningsService.invalidateUserEarningsCache(clip.video.userId);
+
+    this.logger.log(`Created earning for clip ${clipId} from ${platform} webhook: $${amount} and invalidated user ${clip.video.userId} cache`);
   }
 }
