@@ -6,7 +6,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ConnectWalletDto } from './dto/connect-wallet.dto';
+import { CreateWalletConnectionDto } from './dto/connect-wallet.dto';
 import { StellarService } from '../stellar/stellar.service';
 
 export interface DisconnectResult {
@@ -70,7 +70,7 @@ export class WalletsService {
    * Connect or update a wallet.
    * Validates the Stellar address and upserts the record.
    */
-  async connect(userId: number, dto: ConnectWalletDto) {
+  async connect(userId: number, dto: CreateWalletConnectionDto) {
     const validation = this.stellarService.validateAddress(dto.address);
     if (!validation.valid) {
       throw new BadRequestException('Invalid Stellar address format');

@@ -1,7 +1,10 @@
 import { IsNumber, IsString, IsEnum, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class RequestPayoutDto {
+/** @deprecated Use CreatePayoutDto */
+export type RequestPayoutDto = CreatePayoutDto;
+
+export class CreatePayoutDto {
   @ApiProperty({
     description: 'Amount to withdraw',
     example: 100.0,

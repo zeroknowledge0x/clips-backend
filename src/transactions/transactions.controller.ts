@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TransactionsService } from './transactions.service';
-import { SendTransactionDto } from './dto/send-transaction.dto';
+import { CreateTransactionDto } from './dto/send-transaction.dto';
 
 @ApiTags('transactions')
 @ApiBearerAuth('access-token')
@@ -31,7 +31,7 @@ export class TransactionsController {
     @Req() req: any,
     @Headers('Idempotency-Key') idempotencyKey: string | undefined,
     @Body(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }))
-    dto: SendTransactionDto,
+    dto: CreateTransactionDto,
   ) {
     return this.transactionsService.send(req.user.userId, dto, idempotencyKey?.trim() || undefined);
   }

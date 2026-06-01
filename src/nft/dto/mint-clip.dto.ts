@@ -9,7 +9,10 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class MintClipDto {
+/** @deprecated Use CreateMintDto */
+export type MintClipDto = CreateMintDto;
+
+export class CreateMintDto {
   /** ID of the clip being minted */
   @IsString()
   @IsNotEmpty()

@@ -19,7 +19,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StellarService } from '../stellar/stellar.service';
 import { EncryptionService } from '../encryption/encryption.service';
 import { RedisService } from '../redis/redis.service';
-import { SendTransactionDto, TRANSACTION_DAILY_LIMIT } from './dto/send-transaction.dto';
+import { CreateTransactionDto, TRANSACTION_DAILY_LIMIT } from './dto/send-transaction.dto';
 
 const DAILY_VOLUME_TTL_SEC = 86_400; // 24 h
 
@@ -36,7 +36,7 @@ export class TransactionsService {
 
   async send(
     userId: number,
-    dto: SendTransactionDto,
+    dto: CreateTransactionDto,
     idempotencyKey?: string,
   ): Promise<{ hash: string; destination: string; amount: string }> {
     // 1. Validate destination address format (belt-and-suspenders — DTO regex already checks)
