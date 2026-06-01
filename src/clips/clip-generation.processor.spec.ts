@@ -65,7 +65,12 @@ function makeJob(
 function makeProcessor() {
   const emitter = new EventEmitter2();
   const cloudinaryService = new MockCloudinaryService();
-  const clipsGateway = { emitProgressToUser: jest.fn() };
+  const clipsGateway = {
+    emitProgressToUser: jest.fn(),
+    emitProgress: jest.fn(),
+    emitCompleted: jest.fn(),
+    emitFailed: jest.fn(),
+  };
   const clipsService = {
     _registerJobController: jest.fn(),
     _clearJobController: jest.fn(),
@@ -77,6 +82,11 @@ function makeProcessor() {
   const metricsService = {
     incrementClipsGenerated: jest.fn(),
   };
+  const prisma = {
+    video: {
+      findUnique: jest.fn().mockResolvedValue({ userId: 1 }),
+    },
+  };
   jest.spyOn(emitter, 'emit');
   jest.spyOn(cloudinaryService, 'uploadVideoFromBuffer');
   jest.spyOn(cloudinaryService, 'deleteLocalFile');
@@ -86,8 +96,9 @@ function makeProcessor() {
     clipsGateway as any,
     clipsService as any,
     metricsService as any,
+    prisma as any,
   );
-  return { processor, emitter, cloudinaryService, clipsService };
+  return { processor, emitter, cloudinaryService, clipsService, prisma };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

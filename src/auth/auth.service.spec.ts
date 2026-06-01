@@ -12,14 +12,7 @@ import { DeviceFingerprintService } from './device-fingerprint.service';
 import { BruteForceProtectionService } from './brute-force-protection.service';
 import { EncryptionService } from '../encryption/encryption.service';
 
-jest.mock('@stellar/stellar-sdk', () => ({
-  Keypair: {
-    random: jest.fn(() => ({
-      publicKey: () => 'GPUBLICKEY',
-      secret: () => 'SSECRETKEY',
-    })),
-  },
-}));
+jest.mock('@stellar/stellar-sdk', () => require('../../test/mocks/stellar-sdk.mock'));
 
 const mockPrisma = {
   user: {

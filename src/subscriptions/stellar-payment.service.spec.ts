@@ -9,17 +9,7 @@ jest.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaService {},
 }));
 
-jest.mock('@stellar/stellar-sdk', () => ({
-  __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
-    transactionsTransaction: jest.fn(),
-  })),
-  TransactionBuilder: jest.fn(),
-  Networks: {},
-  Operation: {},
-  Asset: {},
-  Horizon: { Server: jest.fn() },
-}));
+jest.mock('@stellar/stellar-sdk', () => require('../../test/mocks/stellar-sdk.mock'));
 
 describe('StellarPaymentService', () => {
   let service: StellarPaymentService;
