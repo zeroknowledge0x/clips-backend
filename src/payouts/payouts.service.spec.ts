@@ -9,16 +9,16 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PayoutsService } from './payouts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StellarService } from '../stellar/stellar.service';
-import { EarningsService } from '../earnings/earnings.service';
+import { PayoutReceiptService } from './payout-receipt.service';
 import {
   ConflictException,
   BadRequestException,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 
 describe('PayoutsService', () => {
   let service: PayoutsService;
-  let prisma: jest.Mocked<PrismaService>;
 
   const mockPrismaService = {
     payout: {
@@ -43,6 +43,10 @@ describe('PayoutsService', () => {
     networkPassphrase: 'Test SDF Network ; September 2015',
   };
 
+  const mockPayoutReceiptService = {
+    generateAndSendReceipt: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -56,14 +60,13 @@ describe('PayoutsService', () => {
           useValue: mockStellarService,
         },
         {
-          provide: EarningsService,
-          useValue: mockEarningsService,
+          provide: PayoutReceiptService,
+          useValue: mockPayoutReceiptService,
         },
       ],
     }).compile();
 
     service = module.get<PayoutsService>(PayoutsService);
-    prisma = module.get(PrismaService);
   });
 
   afterEach(() => {
@@ -96,7 +99,7 @@ describe('PayoutsService', () => {
       );
     });
 
-    it('should throw BadRequestException if balance below minimum', async () => {
+    it('should throw BadRequestException when balance is below minimum', async () => {
       mockPrismaService.payout.findFirst.mockResolvedValue(null);
       mockPrismaService.wallet.findFirst.mockResolvedValue({
         id: 1,
@@ -109,23 +112,116 @@ describe('PayoutsService', () => {
       mockPrismaService.payout.aggregate.mockResolvedValue({
         _sum: { amount: 0 },
       });
+      mockPayoutLimitsService.resolvePayoutAmount.mockImplementation(() => {
+        throw new BadRequestException(
+          'Minimum payout for USD is 5. Your available balance is 3.00 USD.',
+        );
+      });
 
       await expect(service.requestPayout(1)).rejects.toThrow(
         BadRequestException,
       );
     });
+
+    it('should create payout capped at maximum limit', async () => {
+      mockPrismaService.payout.findFirst.mockResolvedValue(null);
+      mockPrismaService.wallet.findFirst.mockResolvedValue({
+        id: 1,
+        address: 'GTEST...',
+      });
+      mockPrismaService.earning.aggregate.mockResolvedValue({
+        _sum: { amount: 20000 },
+      });
+      mockPrismaService.payout.aggregate.mockResolvedValue({
+        _sum: { amount: 0 },
+      });
+      mockPayoutLimitsService.resolvePayoutAmount.mockReturnValue(10000);
+      mockPrismaService.payout.create.mockResolvedValue({
+        id: 9,
+        amount: 10000,
+        status: 'pending',
+        createdAt: new Date(),
+      });
+
+      const result = await service.requestPayout(1);
+
+      expect(mockPayoutLimitsService.resolvePayoutAmount).toHaveBeenCalledWith(
+        20000,
+        'USD',
+      );
+      expect(mockPrismaService.payout.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ amount: 10000, currency: 'USD' }),
+        }),
+      );
+      expect(result.amount).toBe(10000);
+    });
   });
 
-  describe('getPayoutHistory', () => {
-    it('should return payout history for user', async () => {
+  describe('getPayouts', () => {
+    it('should return all payouts for user', async () => {
       const payouts = [
         { id: 1, amount: 100, status: 'completed' },
         { id: 2, amount: 50, status: 'pending' },
       ];
       mockPrismaService.payout.findMany.mockResolvedValue(payouts);
 
-      const result = await service.getPayoutHistory(1);
+      const result = await service.getPayouts(1);
       expect(result).toHaveLength(2);
+      expect(mockPrismaService.payout.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 1 },
+        }),
+      );
+    });
+
+    it('should filter payouts by status', async () => {
+      mockPrismaService.payout.findMany.mockResolvedValue([]);
+
+      await service.getPayouts(1, 'pending');
+
+      expect(mockPrismaService.payout.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 1, status: 'pending' },
+        }),
+      );
+    });
+
+    it('should throw BadRequestException for invalid status', async () => {
+      await expect(service.getPayouts(1, 'processing')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('getPayoutById', () => {
+    it('should return payout when owned by user', async () => {
+      const payout = { id: 5, userId: 1, amount: 100, status: 'completed' };
+      mockPrismaService.payout.findFirst.mockResolvedValue(payout);
+
+      const result = await service.getPayoutById(1, 5);
+      expect(result).toEqual(payout);
+      expect(mockPrismaService.payout.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 5, userId: 1 },
+        }),
+      );
+    });
+
+    it('should throw NotFoundException when payout does not exist', async () => {
+      mockPrismaService.payout.findFirst.mockResolvedValue(null);
+
+      await expect(service.getPayoutById(1, 999)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw NotFoundException when payout belongs to another user', async () => {
+      mockPrismaService.payout.findFirst.mockResolvedValue(null);
+
+      await expect(service.getPayoutById(2, 5)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 

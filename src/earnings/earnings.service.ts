@@ -1,21 +1,33 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  EarningsBreakdown,
-  EarningsByPeriod,
-  EarningsDashboard,
-  EarningsHistoryItem,
-  UserTotalEarnings,
-} from './earnings.types';
+import { buildEarningsCsv } from './earnings-csv.util';
 
-type EarningAggregateRow = {
+export interface EarningsExportOptions {
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface EarningsExportResult {
+  filename: string;
+  content: string;
+}
+
+export interface EarningsBreakdown {
+  royalties: number;
+  subscriptions: number;
+}
+
+export interface EarningsHistoryItem {
+  date: string;
   amount: number;
   source: string | null;
 };
+
+export interface LeaderboardEntry {
+  rank: number;
+  label: string;
+  totalEarned: number;
+}
 
 @Injectable()
 export class EarningsService {
@@ -83,19 +95,24 @@ export class EarningsService {
     page = 1,
     limit = 20,
   ): Promise<EarningsDashboard> {
-    const [totals, snapshot] = await this.prisma.$transaction(async (tx) => {
-      const [earnings, payouts] = await Promise.all([
-        tx.earning.findMany({
-          where: this.userEarningsWhere(userId),
-          select: { amount: true, source: true, date: true },
-        }),
-        tx.payout.findMany({
-          where: { userId },
-          select: { amount: true, status: true, createdAt: true },
-        }),
-      ]);
+    const earnings = await this.prisma.earning.findMany({
+      where: { clip: { video: { userId } }, deletedAt: null },
+      select: { amount: true, source: true, date: true },
+    });
 
-      return [this.aggregateEarnings(earnings), { earnings, payouts }] as const;
+    const royalties = earnings
+      .filter((e) => e.source === 'royalty')
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const subscriptions = earnings
+      .filter((e) => e.source === 'subscription')
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const totalEarned = royalties + subscriptions;
+
+    const payouts = await this.prisma.payout.findMany({
+      where: { userId },
+      select: { amount: true, status: true, createdAt: true },
     });
 
     const paidOut = snapshot.payouts
@@ -135,40 +152,58 @@ export class EarningsService {
     };
   }
 
-  private userEarningsWhere(userId: number) {
-    return { clip: { video: { userId } } };
-  }
+  async softDelete(earningId: number, userId: number): Promise<{ message: string }> {
+    const earning = await this.prisma.earning.findUnique({
+      where: { id: earningId },
+      include: { clip: { include: { video: { select: { userId: true } } } } },
+    });
 
-  private aggregateEarnings(
-    earnings: EarningAggregateRow[],
-  ): UserTotalEarnings {
-    const breakdown = this.computeBreakdown(earnings);
-    return {
-      total: breakdown.royalties + breakdown.subscriptions,
-      breakdown,
-    };
-  }
-
-  private computeBreakdown(
-    earnings: EarningAggregateRow[],
-  ): EarningsBreakdown {
-    const royalties = earnings
-      .filter((e) => e.source === 'royalty')
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    const subscriptions = earnings
-      .filter((e) => e.source === 'subscription')
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    return { royalties, subscriptions };
-  }
-
-  private validatePeriod(startDate: Date, endDate: Date): void {
-    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-      throw new BadRequestException('startDate and endDate must be valid dates');
+    if (!earning || earning.clip.video.userId !== userId) {
+      throw new NotFoundException(`Earning ${earningId} not found`);
     }
-    if (startDate > endDate) {
-      throw new BadRequestException('startDate must be on or before endDate');
+
+    if (earning.deletedAt !== null) {
+      throw new NotFoundException(`Earning ${earningId} not found`);
     }
+
+    await this.prisma.earning.update({
+      where: { id: earningId },
+      data: { deletedAt: new Date() },
+    });
+
+    this.logger.log(`Soft-deleted earning ${earningId} for user ${userId}`);
+
+    return { message: 'Earning deleted successfully' };
+  }
+
+  async getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
+    const enabled = process.env.LEADERBOARD_ENABLED === 'true';
+    if (!enabled) {
+      return [];
+    }
+
+    const earnings = await this.prisma.earning.findMany({
+      where: { deletedAt: null },
+      select: {
+        amount: true,
+        clip: { select: { video: { select: { userId: true } } } },
+      },
+    });
+
+    const totals = new Map<number, number>();
+    for (const e of earnings) {
+      const uid = e.clip.video.userId;
+      totals.set(uid, (totals.get(uid) ?? 0) + e.amount);
+    }
+
+    const sorted = Array.from(totals.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit);
+
+    return sorted.map(([, total], index) => ({
+      rank: index + 1,
+      label: `Creator #${index + 1}`,
+      totalEarned: total,
+    }));
   }
 }
