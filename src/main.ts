@@ -7,6 +7,7 @@ import * as bodyParser from 'body-parser';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AppModule } from './app.module';
+import { PayoutsService } from './payouts/payouts.service';
 import { MetricsInterceptor } from './metrics/metrics.interceptor';
 import { AppLoggerService } from './logger/logger.service';
 
@@ -151,5 +152,23 @@ async function bootstrap() {
   process.on('SIGINT', () => void shutdown('SIGINT'));
 
   await app.listen(process.env.PORT ?? 3000);
+
+  // Start periodic payout verification to confirm on-chain transactions
+  try {
+    const payoutsService = app.get(PayoutsService);
+    const intervalMs = parseInt(process.env.PAYOUT_VERIFIER_INTERVAL_MS ?? '60000', 10);
+
+    // Run once on startup
+    void payoutsService.verifyPendingPayouts().catch((err) => logger.error(`Payout verifier initial run failed: ${err?.message ?? err}`));
+
+    // Schedule periodic runs
+    setInterval(() => {
+      void payoutsService.verifyPendingPayouts().catch((err) => logger.error(`Payout verifier error: ${err?.message ?? err}`));
+    }, intervalMs);
+
+    logger.log(`Payout verifier started (interval=${intervalMs}ms)`);
+  } catch (err) {
+    logger.warn('Payout verifier not started: PayoutsService not available');
+  }
 }
 bootstrap();
