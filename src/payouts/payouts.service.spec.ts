@@ -9,6 +9,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PayoutsService } from './payouts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StellarService } from '../stellar/stellar.service';
+import { PayoutReceiptService } from './payout-receipt.service';
 import {
   ConflictException,
   BadRequestException,
@@ -42,6 +43,10 @@ describe('PayoutsService', () => {
     networkPassphrase: 'Test SDF Network ; September 2015',
   };
 
+  const mockPayoutReceiptService = {
+    generateAndSendReceipt: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -53,6 +58,10 @@ describe('PayoutsService', () => {
         {
           provide: StellarService,
           useValue: mockStellarService,
+        },
+        {
+          provide: PayoutReceiptService,
+          useValue: mockPayoutReceiptService,
         },
       ],
     }).compile();
