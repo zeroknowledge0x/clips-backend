@@ -2,10 +2,8 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { JobsController } from './jobs.controller';
 import { JobsService } from './jobs.service';
-import {
-  CLIP_GENERATION_QUEUE,
-  CLIP_GENERATION_QUEUE_PRIORITY,
-} from '../clips/clip-generation.queue';
+import { QueueCleanupService } from './queue-cleanup.service';
+import { CLIP_GENERATION_QUEUE } from '../clips/clip-generation.queue';
 
 @Module({
   imports: [
@@ -15,6 +13,6 @@ import {
     }),
   ],
   controllers: [JobsController],
-  providers: [JobsService],
+  providers: [JobsService, QueueCleanupService],
 })
 export class JobsModule {}
