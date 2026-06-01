@@ -109,11 +109,18 @@ export class NftMintService {
   /**
    * Verify that a clip belongs to the given user before allowing a mint.
    * Throws ForbiddenException if the clip doesn't exist or isn't owned by userId.
+   *
+   * Performance: Uses select instead of include to fetch only userId (optimization #326)
    */
   async validateClipOwner(clipId: number, userId: number): Promise<void> {
     const clip = await this.prisma.clip.findUnique({
       where: { id: clipId },
-      include: { video: true },
+      select: {
+        id: true,
+        video: {
+          select: { userId: true },
+        },
+      },
     });
     if (!clip) {
       throw new NotFoundException(`Clip with ID ${clipId} not found`);

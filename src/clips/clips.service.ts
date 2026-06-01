@@ -106,9 +106,15 @@ export class ClipsService {
     userId: number,
     clipId: number,
   ): Promise<{ jobId: string | undefined }> {
+    // Performance: Use select to fetch only userId for authorization check (optimization #326)
     const clip = await this.prisma.clip.findUnique({
       where: { id: clipId },
-      include: { video: true },
+      select: {
+        id: true,
+        video: {
+          select: { userId: true },
+        },
+      },
     });
 
     if (!clip) {
@@ -211,12 +217,13 @@ export class ClipsService {
     }
 
     // ── Ownership validation ──────────────────────────────────────────────────
+    // Performance: Use select to fetch only id for ownership validation (optimization #326)
     let clips = await this.prisma.clip.findMany({
       where: {
         id: { in: dto.clipIds.map((id) => Number(id)) },
         video: { userId },
       },
-      include: { video: true },
+      select: { id: true },
     });
     if (!clips) clips = [];
 

@@ -5,6 +5,7 @@ import { ClipsModule } from '../clips/clips.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { BullModule } from '@nestjs/bullmq';
 import { VideoUploadService } from './video-upload.service';
+import { VideoProcessingService } from './video-processing.service';
 import {
   CLIP_GENERATION_QUEUE,
   CLIP_GENERATION_QUEUE_PRIORITY,
@@ -20,7 +21,7 @@ import {
     }),
   ],
   controllers: [VideosController, VideoUploadController],
-  providers: [VideoUploadService],
-  exports: [VideoUploadService],
+  providers: [VideoUploadService, VideoProcessingService],
+  exports: [VideoUploadService, VideoProcessingService],
 })
 export class VideosModule {}

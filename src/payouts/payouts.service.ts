@@ -260,9 +260,27 @@ export class PayoutsService {
     transactionId: string;
     onChainTxHash: string | null;
   }> {
+    // Performance: Use select to fetch only needed fields for payout processing (optimization #326)
     const payout = await this.prisma.payout.findUnique({
       where: { id: payoutId },
-      include: { wallet: true, user: true },
+      select: {
+        id: true,
+        amount: true,
+        currency: true,
+        status: true,
+        stellarXdr: true,
+        wallet: {
+          select: {
+            address: true,
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            email: true,
+          },
+        },
+      },
     });
 
     if (!payout) {
