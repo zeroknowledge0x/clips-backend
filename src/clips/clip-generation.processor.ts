@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
+import { ConfigService } from '@nestjs/config';
 import { Job, UnrecoverableError } from 'bullmq';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Clip } from './clip.entity';
@@ -60,6 +61,9 @@ const PROGRESS = {
 /**
  * BullMQ processor for clip-generation jobs.
  *
+ * Worker concurrency is controlled by BULLMQ_CLIP_GENERATION_CONCURRENCY env var.
+ * Default: 2 concurrent jobs (video processing is CPU-intensive)
+ *
  * Retry configuration (set per-job in ClipsService.enqueueClip via CLIP_JOB_OPTIONS):
  *   attempts : 5   — 1 initial attempt + 4 automatic retries
  *   backoff  : exponential, starting at 2 000 ms
@@ -84,7 +88,9 @@ const PROGRESS = {
  *   80%  → upload          (Cloudinary upload started)
  *  100%  → done            (DB updated, all done)
  */
-@Processor(CLIP_GENERATION_QUEUE)
+@Processor(CLIP_GENERATION_QUEUE, {
+  concurrency: getBullMQWorkerConfig(new ConfigService()).clipGenerationConcurrency,
+})
 export class ClipGenerationProcessor extends WorkerHost {
   private readonly logger = new Logger(ClipGenerationProcessor.name);
 
@@ -97,6 +103,10 @@ export class ClipGenerationProcessor extends WorkerHost {
     private readonly prisma: PrismaService,
   ) {
     super();
+    const config = getBullMQWorkerConfig(configService);
+    this.logger.log(
+      `Clip generation worker initialized with concurrency: ${config.clipGenerationConcurrency}`,
+    );
   }
 
   /** Main job handler — called by BullMQ on each attempt */
@@ -122,6 +132,10 @@ export class ClipGenerationProcessor extends WorkerHost {
       `Processing clip job ${job.id} — attempt ${job.attemptsMade + 1}/${job.opts.attempts ?? 1} ` +
         `videoId=${data.videoId}`,
     );
+
+    // Record job start for metrics tracking
+    const jobMetricId = `${CLIP_GENERATION_QUEUE}:${job.id}`;
+    this.metricsService.recordJobStart(jobMetricId);
 
     try {
       await this.clipsService.refreshQueueDepth();
@@ -215,6 +229,7 @@ export class ClipGenerationProcessor extends WorkerHost {
       // ── Step 4: done ─────────────────────────────────────────────────────
       await job.updateProgress({ percent: PROGRESS.DONE, step: 'done' });
       this.metricsService.incrementClipsGenerated('success');
+      this.metricsService.recordJobCompletion(jobMetricId, CLIP_GENERATION_QUEUE, 'success');
 
       clearTimeout(timeout);
       this.clipsService._clearJobController(String(job.id ?? ''));
@@ -240,6 +255,8 @@ export class ClipGenerationProcessor extends WorkerHost {
       };
     } catch (error) {
       this.metricsService.incrementClipsGenerated('failure');
+      this.metricsService.recordJobCompletion(jobMetricId, CLIP_GENERATION_QUEUE, 'failure');
+      this.metricsService.recordJobFailure(CLIP_GENERATION_QUEUE, error.message);
       this.logger.error(
         `Clip generation failed for ${clipId}: ${error.message}`,
         error.stack,
@@ -348,6 +365,10 @@ export class ClipGenerationProcessor extends WorkerHost {
     }
 
     // Final failure — log and notify the rest of the system
+    // Record final failure for metrics
+    const jobMetricId = `${CLIP_GENERATION_QUEUE}:${job.id}`;
+    this.metricsService.recordJobFailure(CLIP_GENERATION_QUEUE, 'final_failure');
+
     this.logger.error(
       `[FINAL FAILURE] Clip job ${job.id} exhausted all ${maxAttempts} attempts — ` +
         `videoId=${job.data.videoId} — ` +

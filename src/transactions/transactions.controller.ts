@@ -1,5 +1,5 @@
-import { Controller, Post, Body, Headers, Req, UseGuards, ValidationPipe, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
+import { Controller, Post, Body, Req, UseGuards, ValidationPipe } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TransactionsService } from './transactions.service';
@@ -14,12 +14,6 @@ export class TransactionsController {
 
   @Post('send')
   @Throttle({ transactionSend: { limit: 5, ttl: 60000 } })
-  @HttpCode(HttpStatus.OK)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    description: 'Optional unique key (UUID) to deduplicate repeated requests within 24 h',
-    required: false,
-  })
   @ApiOperation({
     summary: "Send XLM from the user's custodial wallet",
     description:
