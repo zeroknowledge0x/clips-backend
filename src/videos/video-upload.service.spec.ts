@@ -8,12 +8,20 @@ import { CLIP_GENERATION_QUEUE } from '../clips/clip-generation.queue';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
+// Mock fluent-ffmpeg first
+jest.mock('fluent-ffmpeg', () => require('../../test/__mocks__/fluent-ffmpeg'));
+
 // Mock ffmpeg.util
-jest.mock('../clips/ffmpeg.util', () => ({
-  getVideoMetadata: jest.fn(),
-}));
+jest.mock('../clips/ffmpeg.util', () => {
+  const actual = jest.requireActual('../clips/ffmpeg.util');
+  return {
+    ...actual,
+    getVideoMetadata: jest.fn(actual.getVideoMetadata),
+  };
+});
 
 import { getVideoMetadata } from '../clips/ffmpeg.util';
+import { mockFFmpegSuccess, cleanupFFmpegMockAfterTest } from '../../test/helpers/ffmpeg-mock.helper';
 
 describe('VideoUploadService', () => {
   let service: VideoUploadService;
@@ -42,6 +50,7 @@ describe('VideoUploadService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockFFmpegSuccess(); // Ensure FFmpeg mock is in success state
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -58,6 +67,10 @@ describe('VideoUploadService', () => {
     service = module.get<VideoUploadService>(VideoUploadService);
     prismaService = module.get<PrismaService>(PrismaService);
     mockQueue = module.get(getQueueToken(CLIP_GENERATION_QUEUE));
+  });
+
+  afterEach(() => {
+    cleanupFFmpegMockAfterTest();
   });
 
   describe('validateVideoFile', () => {
