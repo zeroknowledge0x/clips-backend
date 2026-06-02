@@ -37,7 +37,10 @@ export const TRANSACTION_MIN_AMOUNT = 0.0000001; // 1 stroop
 export const TRANSACTION_MAX_AMOUNT = 10_000;    // 10 000 XLM per send
 export const TRANSACTION_DAILY_LIMIT = 50_000;   // 50 000 XLM rolling 24 h
 
-export class SendTransactionDto {
+/** @deprecated Use CreateTransactionDto */
+export type SendTransactionDto = CreateTransactionDto;
+
+export class CreateTransactionDto {
   @ApiProperty({
     description: 'Stellar destination address (G... — 56 chars)',
     maxLength: 56,

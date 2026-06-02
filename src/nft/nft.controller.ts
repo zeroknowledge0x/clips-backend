@@ -14,8 +14,8 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { NftService, MintResult } from './nft.service';
-import { MintClipDto } from './dto/mint-clip.dto';
-import { PrepareMintDto } from './dto/prepare-mint.dto';
+import { CreateMintDto } from './dto/mint-clip.dto';
+import { CreateMintPreparationDto } from './dto/prepare-mint.dto';
 import { NftMintService } from '../clips/nft-mint.service';
 import { RoyaltyQueryService, RoyaltyInfo } from './royalty-query.service';
 import { LoginGuard } from '../auth/guards/login.guard';
@@ -38,7 +38,7 @@ export class NftController {
   @Throttle({ nftMint: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Mint a clip as an NFT (legacy)' })
   @ApiResponse({ status: 201, description: 'NFT minted successfully' })
-  async mint(@Body() dto: MintClipDto): Promise<MintResult> {
+  async mint(@Body() dto: CreateMintDto): Promise<MintResult> {
     return this.nftService.mintClip(dto);
   }
 
@@ -55,7 +55,7 @@ export class NftController {
   @ApiResponse({ status: 201, description: 'Mint transaction XDR returned' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async prepareMint(
-    @Body() dto: PrepareMintDto,
+    @Body() dto: CreateMintPreparationDto,
     @Req() req: Request,
   ) {
     const userId = Number((req as any).user?.id ?? 0);

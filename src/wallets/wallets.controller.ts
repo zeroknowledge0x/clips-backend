@@ -14,7 +14,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@ne
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WalletsService, DisconnectResult } from './wallets.service';
-import { ConnectWalletDto } from './dto/connect-wallet.dto';
+import { CreateWalletConnectionDto } from './dto/connect-wallet.dto';
 import { WalletOwnershipGuard } from './guards/wallet-ownership.guard';
 
 interface AuthRequest extends Request {
@@ -58,7 +58,7 @@ export class WalletsController {
   @ApiResponse({ status: 400, description: 'Invalid wallet data' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @HttpCode(HttpStatus.OK)
-  async connect(@Req() req: AuthRequest, @Body() dto: ConnectWalletDto) {
+  async connect(@Req() req: AuthRequest, @Body() dto: CreateWalletConnectionDto) {
     return this.walletsService.connect(req.user.userId, dto);
   }
 }
