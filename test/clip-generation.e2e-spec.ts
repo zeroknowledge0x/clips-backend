@@ -16,10 +16,18 @@ jest.mock('../src/common/circuit-breaker/circuit-breaker.service', () => ({
   },
 }));
 
-jest.mock('../src/clips/ffmpeg.util', () => ({
-  cutClip: jest.fn().mockResolvedValue(undefined),
-  getVideoMetadata: jest.fn().mockResolvedValue({ duration: 30, width: 1920, height: 1080, format: 'mp4' }),
-}));
+// Import and configure FFmpeg mock before other imports
+jest.mock('fluent-ffmpeg', () => require('./__mocks__/fluent-ffmpeg'));
+
+// Mock ffmpeg.util with actual implementations that use our mocked fluent-ffmpeg
+jest.mock('../src/clips/ffmpeg.util', () => {
+  const actual = jest.requireActual('../src/clips/ffmpeg.util');
+  return {
+    ...actual,
+    cutClip: jest.fn(actual.cutClip),
+    getVideoMetadata: jest.fn(actual.getVideoMetadata),
+  };
+});
 
 jest.mock('../src/clips/virality-score.util', () => ({
   calculateViralityScore: jest.fn().mockReturnValue(82),
@@ -40,6 +48,12 @@ import { MetricsService } from '../src/metrics/metrics.service';
 import { CloudinaryService } from '../src/clips/cloudinary.service';
 import { ClipGenerationProcessor } from '../src/clips/clip-generation.processor';
 import { ClipsGateway } from '../src/clips/clips.gateway';
+import {
+  mockFFmpegSuccess,
+  mockFFmpegError,
+  mockFFmpegOOM,
+  cleanupFFmpegMockAfterTest,
+} from './helpers/ffmpeg-mock.helper';
 
 // ── In-memory fakes ───────────────────────────────────────────────────────────
 
@@ -160,6 +174,8 @@ describe('Clip Generation E2E', () => {
     prisma.clips = [];
     prisma.videos = [];
     jest.clearAllMocks();
+    cleanupFFmpegMockAfterTest();
+    mockFFmpegSuccess(); // Reset to success state
   });
 
   // ── Success path ────────────────────────────────────────────────────────────
@@ -276,8 +292,7 @@ describe('Clip Generation E2E', () => {
     });
 
     it('processor propagates FFmpeg errors so BullMQ can retry', async () => {
-      const { cutClip } = require('../src/clips/ffmpeg.util');
-      cutClip.mockRejectedValueOnce(new Error('FFmpeg OOM'));
+      mockFFmpegOOM(); // Configure mock to fail with OOM error
 
       const job = {
         id: 'job-fail-2',
@@ -294,7 +309,7 @@ describe('Clip Generation E2E', () => {
         updateProgress: jest.fn(),
       } as any;
 
-      await expect(processor.process(job)).rejects.toThrow('FFmpeg OOM');
+      await expect(processor.process(job)).rejects.toThrow(/memory|OOM/i);
     });
 
     it('handleClipGenerationFailed marks video as failed in DB', async () => {
