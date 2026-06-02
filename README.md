@@ -41,25 +41,90 @@ You always stay in control:
 | Blockchain     | Stellar Soroban (Rust)              | Very cheap fees, built-in royalties |
 | AI             | Runway Gen-3 + Claude               | Finds the most viral moments        |
 
-## Quick Start (Local Development)
+## Getting Started
 
-### Requirements
+### Prerequisites
 
-- Node.js 18 or newer
-- Docker (recommended for database & Redis)
+- Node.js 18+
+- npm 9+
 - Git
+- Docker and Docker Compose (optional, recommended for PostgreSQL and Redis)
 
-### Clone & install
+### Clone the repository
 
 ```bash
-git clone https://github.com/your-username/clipcash.git
-cd clipcash/backend
+git clone https://github.com/devpragya8081/clips-backend.git
+cd clips-backend
+```
+
+Add the upstream remote if you are contributing:
+
+```bash
+git remote add upstream https://github.com/ANYTECHS/clips-backend.git
+```
+
+### Setup with Docker (recommended)
+
+Start PostgreSQL and Redis:
+
+```bash
+docker compose up -d
+```
+
+Copy environment defaults and set `DATABASE_URL` to match Docker:
+
+```bash
 cp .env.example .env
+```
+
+Use this `DATABASE_URL` when running the compose file above:
+
+```env
+DATABASE_URL="postgresql://postgres:password@localhost:5432/clipscash?schema=public"
+REDIS_HOST=localhost
+REDIS_PORT=6379
+```
+
+Install dependencies, run migrations, and start the API:
+
+```bash
 npm install
+npx prisma migrate dev
 npm run start:dev
 ```
 
-Open <http://localhost:3000> in your browser.
+API: <http://localhost:3000>  
+Swagger (development): <http://localhost:3000/api/docs>
+
+### Manual setup (without Docker)
+
+1. Install and run **PostgreSQL 14+** and create a database (e.g. `clipscash`).
+2. Install and run **Redis 7+** on `localhost:6379`.
+3. Copy `.env.example` to `.env` and set `DATABASE_URL`, `REDIS_HOST`, and `JWT_SECRET`.
+4. Run `npm install`, `npx prisma migrate dev`, and `npm run start:dev`.
+
+### Useful commands
+
+| Command | Description |
+| ------- | ----------- |
+| `npm run start:dev` | Start API with hot reload |
+| `npm test` | Unit tests |
+| `npm run test:e2e` | End-to-end tests |
+| `npm run lint` | ESLint |
+| `npx prisma studio` | Browse database |
+
+### Troubleshooting
+
+| Problem | What to check |
+| ------- | ------------- |
+| `Can't reach database server` | PostgreSQL is running; `DATABASE_URL` host/port/user/password match your instance |
+| Redis / BullMQ connection errors | Redis is running; `REDIS_HOST` and `REDIS_PORT` in `.env` |
+| `SOROBAN_NFT_CONTRACT_ID` errors on NFT routes | Set a deployed testnet contract ID or avoid NFT endpoints until configured |
+| Prisma migration failures | Database exists and credentials are correct; try `npx prisma migrate reset` only on a local dev DB |
+| Port 3000 already in use | Stop the other process or set `PORT` in `.env` |
+| JWT / 401 on protected routes | Obtain a token via auth endpoints; send `Authorization: Bearer <token>` |
+
+Stellar-specific integration (wallets, mint, royalties) is documented in [docs/stellar-integration.md](./docs/stellar-integration.md).
 
 ## API Documentation (Swagger/OpenAPI)
 
@@ -71,6 +136,7 @@ When running in **development mode** (`NODE_ENV !== 'production'`):
 
 - **Swagger UI**: <http://localhost:3000/api/docs>
 - **OpenAPI JSON**: <http://localhost:3000/api/docs-json> (or `openapi.json` file)
+- **Rate Limits**: See [docs/rate-limits.md](./docs/rate-limits.md) for detailed rate limiting documentation
 
 ### Authentication
 
@@ -111,23 +177,35 @@ ENABLE_SWAGGER_UI=true
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and fill in the values. Key variables:
+Copy `.env.example` to `.env` and fill in the values:
 
-```env
-DATABASE_URL=postgresql://...
-REDIS_HOST=localhost
-
-# BullMQ Worker Scaling (see BULLMQ_WORKER_SCALING.md for details)
-BULLMQ_CLIP_GENERATION_CONCURRENCY=2
-BULLMQ_EMAIL_DELIVERY_CONCURRENCY=5
-
-# Stellar (see section below)
-STELLAR_NETWORK=testnet
-MIN_STELLAR_PAYOUT=5
-METRICS_TOKEN=change-this-in-production
+```bash
+cp .env.example .env
 ```
 
-For detailed guidance on configuring BullMQ worker concurrency for different environments, see [BULLMQ_WORKER_SCALING.md](./BULLMQ_WORKER_SCALING.md).
+### Key Variables Reference
+
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | ✅ | PostgreSQL connection string |
+| `ENCRYPTION_SECRET` | ✅ | Min 32-char secret for encrypting sensitive data |
+| `JWT_SECRET` | ✅ | Secret for signing JWT access tokens |
+| `REDIS_HOST` / `REDIS_PORT` | ✅ | Redis connection (used by BullMQ and rate limiting) |
+| `STELLAR_NETWORK` | ✅ | `testnet` (dev) or `public` (production) |
+| `SOROBAN_NFT_CONTRACT_ID` | ✅ | Deployed Soroban NFT contract ID |
+| `CLOUDINARY_CLOUD_NAME` | ✅ | Cloudinary cloud name for video/thumbnail CDN |
+| `CLOUDINARY_API_KEY` | ✅ | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | ✅ | Cloudinary API secret |
+| `AYRSHARE_API_KEY` | ✅ | Ayrshare key for multi-platform social posting |
+| `PINATA_JWT` | ✅ | Pinata JWT for uploading NFT metadata to IPFS |
+| `WEBHOOK_SECRET` | ✅ | HMAC-SHA256 secret for Stellar payment webhooks |
+| `METRICS_TOKEN` | ✅ | Bearer token protecting the `/metrics` endpoint |
+| `BULLMQ_CLIP_GENERATION_CONCURRENCY` | — | Parallel clip jobs (default: `2`) |
+| `BULLMQ_EMAIL_DELIVERY_CONCURRENCY` | — | Parallel email jobs (default: `5`) |
+| `MIN_PAYOUT_USD` / `MAX_PAYOUT_USD` | — | Payout limits in USD (default: `5` / `10000`) |
+| `LEADERBOARD_ENABLED` | — | Enable public earnings leaderboard (default: `false`) |
+
+For detailed BullMQ concurrency tuning, see [BULLMQ_WORKER_SCALING.md](./BULLMQ_WORKER_SCALING.md).
 
 ## Stellar Network Configuration
 

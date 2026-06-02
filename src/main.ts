@@ -39,7 +39,45 @@ async function bootstrap() {
   // Swagger setup - only available in non-production environments
   const swaggerConfig = new DocumentBuilder()
     .setTitle('ClipCash API')
-    .setDescription('ClipCash backend API documentation')
+    .setDescription(
+      'ClipCash backend API documentation\n\n' +
+      '## Rate Limits\n\n' +
+      'All API endpoints are protected by rate limiting to ensure fair usage and system stability.\n\n' +
+      '### Rate Limit Tiers\n\n' +
+      '| Tier | Limit | Window | Applies To |\n' +
+      '|------|-------|--------|------------|\n' +
+      '| **Default** | 100 requests | 60 seconds | Most endpoints |\n' +
+      '| **Auth** | 10 requests | 60 seconds | Login, registration, password reset |\n' +
+      '| **Sensitive** | 3 requests | 15 minutes | MFA setup, account deletion |\n' +
+      '| **Email Verify** | 3 requests | 60 minutes | Email verification resend |\n' +
+      '| **Clip Generate** | 10 requests | 60 seconds | Clip generation endpoints |\n' +
+      '| **NFT Mint** | 5 requests | 60 seconds | NFT minting endpoints |\n' +
+      '| **Wallet Connect** | 10 requests | 60 seconds | Wallet connection |\n' +
+      '| **Wallet Disconnect** | 10 requests | 60 seconds | Wallet disconnection |\n' +
+      '| **Transaction Send** | 5 requests | 60 seconds | Blockchain transactions |\n\n' +
+      '### Rate Limit Headers\n\n' +
+      'All responses include rate limit information in headers:\n' +
+      '- `X-RateLimit-Limit` — Maximum requests allowed in the window\n' +
+      '- `X-RateLimit-Remaining` — Requests remaining in current window\n' +
+      '- `X-RateLimit-Reset` — Unix timestamp when the limit resets\n\n' +
+      '### Rate Limit Exceeded\n\n' +
+      'When you exceed the rate limit, you will receive a `429 Too Many Requests` response:\n' +
+      '```json\n' +
+      '{\n' +
+      '  "statusCode": 429,\n' +
+      '  "message": "ThrottlerException: Too Many Requests",\n' +
+      '  "error": "Too Many Requests"\n' +
+      '}\n' +
+      '```\n\n' +
+      '### Best Practices\n\n' +
+      '- Implement exponential backoff when receiving 429 responses\n' +
+      '- Monitor rate limit headers to avoid hitting limits\n' +
+      '- Cache responses when possible to reduce API calls\n' +
+      '- Use webhooks instead of polling for real-time updates\n' +
+      '- Contact support for higher limits if needed for production use\n\n' +
+      '### IP Whitelisting\n\n' +
+      'Trusted IPs can be whitelisted by setting `THROTTLER_WHITELIST` environment variable (comma-separated list).'
+    )
     .setVersion('1.0')
     .addBearerAuth(
       {

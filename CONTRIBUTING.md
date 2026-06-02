@@ -5,6 +5,7 @@ Thank you for your interest in contributing! This guide covers everything you ne
 ## Table of Contents
 
 - [Getting Started](#getting-started)
+- [Contributor Roles](#contributor-roles)
 - [Development Workflow](#development-workflow)
 - [Stellar Bounty Program](#stellar-bounty-program)
 - [Soroban Contract Contributions](#soroban-contract-contributions)
@@ -20,6 +21,168 @@ Thank you for your interest in contributing! This guide covers everything you ne
 3. Copy `.env.example` to `.env` and fill in required values
 4. Run database migrations: `npx prisma migrate dev`
 5. Start the dev server: `npm run start:dev`
+
+---
+
+## Contributor Roles
+
+We welcome contributors with different skills and interests! Find the role that matches your expertise:
+
+### 🌐 Web3 / Blockchain Developer
+
+Work on Stellar network integration, Soroban smart contracts, and NFT functionality.
+
+**Key areas:**
+- `src/stellar/` — Stellar SDK configuration and network integration
+- `src/wallets/` — Wallet connection and management
+- `src/nft/` — NFT minting and royalty logic
+- `src/payouts/` — Stellar payout processing
+- `contracts/nft-royalty/` — Soroban smart contracts (Rust)
+
+**Prerequisites:**
+- Familiarity with Stellar SDK and Soroban
+- Understanding of blockchain transactions and wallet connections
+- Rust knowledge for contract development
+
+**Good first issues:** Look for `web3`, `stellar`, or `soroban` labels
+
+---
+
+### 🎬 Video Processing Developer
+
+Enhance video upload, clip generation, and FFmpeg processing pipelines.
+
+**Key areas:**
+- `src/videos/` — Video upload and validation
+- `src/clips/` — Clip generation, FFmpeg utilities, virality scoring
+- `src/clips/ffmpeg.util.ts` — FFmpeg video cutting logic
+- `src/clips/cloudinary.service.ts` — Cloudinary upload handling
+- `src/jobs/` — BullMQ job queues for background processing
+
+**Prerequisites:**
+- Experience with FFmpeg or video processing libraries
+- Understanding of asynchronous job queues (BullMQ)
+- Knowledge of cloud storage (Cloudinary)
+
+**Good first issues:** Look for `video`, `ffmpeg`, or `clips` labels
+
+---
+
+### 🎨 Frontend / API Integration Developer
+
+Build and improve API endpoints, Swagger documentation, and client-facing features.
+
+**Key areas:**
+- `src/**/dto/` — Request/response DTOs
+- `src/**/controllers.ts` — REST API endpoints
+- `src/main.ts` — Swagger/OpenAPI configuration
+- `test/*.e2e-spec.ts` — End-to-end API tests
+
+**Prerequisites:**
+- NestJS or similar framework experience
+- REST API design principles
+- OpenAPI/Swagger documentation
+
+**Good first issues:** Look for `api`, `documentation`, or `frontend` labels
+
+---
+
+### 🔒 Security / DevOps Developer
+
+Improve authentication, rate limiting, security headers, and deployment infrastructure.
+
+**Key areas:**
+- `src/auth/` — JWT, OAuth, magic links, MFA
+- `src/middlewares/` — Rate limiting, CSRF protection
+- `src/encryption/` — Sensitive data encryption
+- `docker-compose.yml` — Docker setup
+- `.github/workflows/` — CI/CD pipelines
+
+**Prerequisites:**
+- Security best practices (OWASP)
+- Docker and containerization
+- CI/CD workflows (GitHub Actions)
+
+**Good first issues:** Look for `security`, `devops`, or `infrastructure` labels
+
+---
+
+### 🧪 Testing / QA Developer
+
+Write comprehensive tests, improve code coverage, and ensure quality across the codebase.
+
+**Key areas:**
+- `test/` — E2E and integration tests
+- `src/**/*.spec.ts` — Unit tests
+- Test fixtures and mocks
+
+**Prerequisites:**
+- Jest or similar testing framework
+- Understanding of unit, integration, and E2E testing
+- Test-driven development (TDD) principles
+
+**Good first issues:** Look for `testing`, `qa`, or `good-first-issue` labels
+
+---
+
+### 📚 Documentation Writer
+
+Improve developer documentation, API guides, architecture diagrams, and onboarding materials.
+
+**Key areas:**
+- `README.md` — Project overview and setup
+- `CONTRIBUTING.md` — Contribution guidelines
+- `docs/` — Architecture and integration docs
+- Swagger/OpenAPI endpoint documentation
+
+**Prerequisites:**
+- Clear technical writing skills
+- Markdown proficiency
+- Understanding of developer documentation best practices
+
+**Good first issues:** Look for `documentation` or `good-first-issue` labels
+
+---
+
+### 🔌 Platform Integrations Developer
+
+Add support for new social media platforms, webhooks, and third-party service integrations.
+
+**Key areas:**
+- `src/user-platform/` — Platform account connections
+- `src/clips/ayrshare.service.ts` — Social media posting
+- `src/webhooks/` — Webhook handling for external platforms
+- `src/earnings/` — Multi-platform earnings aggregation
+
+**Prerequisites:**
+- REST API integration experience
+- OAuth flows and webhook handling
+- Understanding of social media APIs (TikTok, Instagram, YouTube)
+
+**Good first issues:** Look for `integration`, `platform`, or `webhooks` labels
+
+---
+
+### 🗄️ Database / Performance Developer
+
+Optimize Prisma queries, improve database schema, and enhance application performance.
+
+**Key areas:**
+- `prisma/schema.prisma` — Database schema
+- Service files with Prisma queries
+- Indexing and query optimization
+- Database migrations
+
+**Prerequisites:**
+- PostgreSQL and Prisma experience
+- Query optimization and indexing
+- Database design principles
+
+**Good first issues:** Look for `prisma`, `database`, or `performance` labels
+
+---
+
+**Not sure where to start?** Check out issues labeled `good-first-issue` or join our community discussions!
 
 ---
 
